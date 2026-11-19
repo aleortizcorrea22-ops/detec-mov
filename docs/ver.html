@@ -47,21 +47,40 @@
       setStatus('Sin conexión a internet.');
       hint.hidden = false;
     } else {
-      const peer = new Peer();
-      peer.on('open', () => {
+      // Stream vacío pero real (un canvas en blanco), más compatible que un MediaStream sin pistas.
+      const blankCanvas = document.createElement('canvas');
+      blankCanvas.width = 2; blankCanvas.height = 2;
+      const emptyStream = blankCanvas.captureStream ? blankCanvas.captureStream(1) : new MediaStream();
+
+      let connected = false;
+      let retryTimer = null;
+
+      function tryCall(peer) {
         setStatus('Llamando…');
-        const call = peer.call(remoteId, new MediaStream());
+        const call = peer.call(remoteId, emptyStream);
         call.on('stream', (remoteStream) => {
+          connected = true;
+          clearTimeout(retryTimer);
           video.srcObject = remoteStream;
           setStatus('En vivo', true);
         });
-        call.on('close', () => setStatus('Se terminó la llamada.'));
-        call.on('error', () => { setStatus('No se pudo conectar.'); hint.hidden = false; });
-        setTimeout(() => {
-          if (!video.srcObject) { setStatus('No responde.'); hint.hidden = false; }
-        }, 15000);
-      });
+        call.on('close', () => { if (connected) setStatus('Se terminó la llamada.'); });
+        call.on('error', () => scheduleRetry(peer));
+        setTimeout(() => { if (!connected) scheduleRetry(peer); }, 8000);
+      }
+
+      function scheduleRetry(peer) {
+        if (connected) return;
+        setStatus('No responde todavía, reintentando…');
+        hint.hidden = false;
+        clearTimeout(retryTimer);
+        retryTimer = setTimeout(() => tryCall(peer), 5000);
+      }
+
+      const peer = new Peer();
+      peer.on('open', () => tryCall(peer));
       peer.on('error', (err) => {
+        if (err.type === 'peer-unavailable') { scheduleRetry(peer); return; }
         setStatus(`Error: ${err.type || err.message}`);
         hint.hidden = false;
       });

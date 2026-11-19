@@ -262,6 +262,43 @@ function stopSource() {
 // celulares se encuentren; el video después va directo entre los dos.
 
 let livePeer = null;
+let liveLinkSent = false;
+
+function liveShareId() {
+  let id = localStorage.getItem('detecmov.live.id');
+  if (!id) {
+    id = 'dmv-' + Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, '0')).join('');
+    try { localStorage.setItem('detecmov.live.id', id); } catch { /* sin almacenamiento */ }
+  }
+  return id;
+}
+
+function openLivePeer(id) {
+  livePeer = new Peer(id);
+  livePeer.on('open', async () => {
+    if (liveLinkSent) return;
+    liveLinkSent = true;
+    const link = `${location.origin}${location.pathname.replace(/[^/]*$/, '')}ver.html#${id}`;
+    addLog(`Video en vivo listo: ${link}`);
+    try {
+      await sendAlert({ text: `🔴 Ver esta cámara en vivo:\n${link}` });
+    } catch (e) {
+      addLog(`No se pudo mandar el link por Telegram: ${e.message}`, 'alert');
+    }
+  });
+  livePeer.on('call', (call) => call.answer(stream));
+  livePeer.on('disconnected', () => {
+    if (settings.liveWebrtc) setTimeout(() => livePeer?.reconnect(), 2000);
+  });
+  livePeer.on('error', (err) => {
+    if (err.type === 'unavailable-id') {
+      // Quedó registrado de una sesión anterior (se va a liberar solo). Reintentamos.
+      setTimeout(() => { if (settings.liveWebrtc) openLivePeer(id); }, 5000);
+    } else {
+      addLog(`Video en vivo: ${err.type || err.message}`, 'alert');
+    }
+  });
+}
 
 function startLiveShare() {
   if (!settings.liveWebrtc || settings.sourceType !== 'device' || !stream) return;
@@ -269,19 +306,9 @@ function startLiveShare() {
     addLog('No se pudo activar el video en vivo (sin conexión a internet)', 'alert');
     return;
   }
+  liveLinkSent = false;
   try {
-    livePeer = new Peer();
-    livePeer.on('open', async (id) => {
-      const link = `${location.origin}${location.pathname.replace(/[^/]*$/, '')}ver.html#${id}`;
-      addLog(`Video en vivo listo: ${link}`);
-      try {
-        await sendAlert({ text: `🔴 Ver esta cámara en vivo:\n${link}` });
-      } catch (e) {
-        addLog(`No se pudo mandar el link por Telegram: ${e.message}`, 'alert');
-      }
-    });
-    livePeer.on('call', (call) => call.answer(stream));
-    livePeer.on('error', (err) => addLog(`Video en vivo: ${err.type || err.message}`, 'alert'));
+    openLivePeer(liveShareId());
   } catch (e) {
     addLog(`No se pudo activar el video en vivo: ${e.message}`, 'alert');
   }
@@ -291,6 +318,10 @@ function stopLiveShare() {
   livePeer?.destroy();
   livePeer = null;
 }
+
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && livePeer?.disconnected && !livePeer.destroyed) livePeer.reconnect();
+});
 
 /** Devuelve la imagen a analizar en este momento (o null si no hay cuadro nuevo). */
 let lastVideoTime = -1;
