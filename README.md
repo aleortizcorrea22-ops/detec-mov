@@ -60,7 +60,9 @@ Elige **Cámara IP (stream MJPEG)** o **Cámara IP (foto JPG)** y escribe la URL
 | App "IP Webcam" (Android) | `http://192.168.1.50:8080/video` (MJPEG) o `http://192.168.1.50:8080/shot.jpg` (foto) |
 | Cámaras con usuario y clave | `http://usuario:clave@192.168.1.60/cgi-bin/snapshot.cgi` |
 
-Muchas cámaras IP ofrecen una URL de foto (snapshot) o MJPEG además de RTSP; busca "snapshot URL" o "MJPEG URL" con la marca y modelo. **RTSP todavía no está soportado** (los navegadores no lo leen). Es el siguiente paso cuando llegue la cámara: convertirlo en el servidor con ffmpeg.
+Muchas cámaras IP ofrecen además una URL de foto (snapshot) o MJPEG; busca "snapshot URL" o "MJPEG URL" con la marca y modelo, suele ser más liviano.
+
+**Cámaras de seguridad (RTSP):** la mayoría de las cámaras de seguridad (PTZ o fijas, de cualquier marca) entregan el video por **RTSP**. Elegí **Cámara IP (stream MJPEG)** y pegá ahí la URL RTSP (algo como `rtsp://usuario:clave@192.168.1.64:554/stream1`, la da el manual o la app del fabricante). El servidor la convierte con [ffmpeg](https://ffmpeg.org/download.html), que tiene que estar instalado y en el PATH (o indicado con `FFMPEG_PATH` en `.env`). Si la cámara es PTZ, dejala fija apuntando al lugar donde está la persona; moverla desde la app no está soportado todavía.
 
 ### Usarla desde el celular
 
@@ -94,7 +96,7 @@ Si usas un túnel o publicas la app en internet, cualquiera que tenga el enlace 
 - La cámara (o el navegador con la app) debe quedar **abierta y en primer plano**. Con la app minimizada, el navegador reduce la velocidad de análisis. La app pide que la pantalla no se apague.
 - Visto de espaldas, o con la cabeza tapada, la pose es menos fiable.
 - Todavía no distingue "rascar" (movimiento repetido) de "tocar". Avisa ante cualquier contacto sostenido de la mano con la cabeza.
-- RTSP pendiente (ver arriba).
+- Para RTSP hace falta tener ffmpeg instalado en la PC (ver arriba).
 
 ## Desarrollo
 

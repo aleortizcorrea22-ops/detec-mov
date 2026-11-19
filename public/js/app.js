@@ -9,7 +9,7 @@ const els = {
   urlField: $('urlField'), cameraUrl: $('cameraUrl'), startBtn: $('startBtn'), stopBtn: $('stopBtn'),
   sensitivity: $('sensitivity'), sensVal: $('sensVal'), holdMs: $('holdMs'), holdVal: $('holdVal'),
   cooldownS: $('cooldownS'), coolVal: $('coolVal'), model: $('model'), includeFace: $('includeFace'), useHands: $('useHands'),
-  sendPhoto: $('sendPhoto'), beep: $('beep'), drawSkeleton: $('drawSkeleton'), mirror: $('mirror'), viewer: $('viewer'),
+  sendPhoto: $('sendPhoto'), beep: $('beep'), drawSkeleton: $('drawSkeleton'), mirror: $('mirror'), viewer: $('viewer'), shareLive: $('shareLive'),
   tgStatus: $('tgStatus'), testBtn: $('testBtn'), findChatBtn: $('findChatBtn'), chatList: $('chatList'), log: $('log'),
 };
 
@@ -18,7 +18,7 @@ const els = {
 
 const DEFAULTS = {
   sourceType: 'device', deviceId: '', cameraUrl: '', sensitivity: 1, holdMs: 600, cooldownS: 30,
-  model: 'full', includeFace: false, useHands: true, sendPhoto: true, beep: true, drawSkeleton: true, mirror: false,
+  model: 'full', includeFace: false, useHands: true, sendPhoto: true, beep: true, drawSkeleton: true, mirror: false, shareLive: false,
 };
 const settings = { ...DEFAULTS, ...readSettings() };
 
@@ -36,7 +36,7 @@ function bindSettings() {
   els.holdMs.value = settings.holdMs;
   els.cooldownS.value = settings.cooldownS;
   els.model.value = settings.model;
-  for (const k of ['includeFace', 'useHands', 'sendPhoto', 'beep', 'drawSkeleton', 'mirror']) els[k].checked = settings[k];
+  for (const k of ['includeFace', 'useHands', 'sendPhoto', 'beep', 'drawSkeleton', 'mirror', 'shareLive']) els[k].checked = settings[k];
 
   const refresh = () => {
     els.sensVal.textContent = `${Math.round(settings.sensitivity * 100)}%`;
@@ -65,6 +65,7 @@ function bindSettings() {
   on(els.beep, 'beep');
   on(els.drawSkeleton, 'drawSkeleton');
   on(els.mirror, 'mirror');
+  on(els.shareLive, 'shareLive');
   els.deviceSelect.addEventListener('change', () => { settings.deviceId = els.deviceSelect.value; saveSettings(); });
   els.model.addEventListener('change', async () => {
     settings.model = els.model.value;
@@ -295,6 +296,7 @@ function processFrame({ source, w, h }) {
   const state = tracker.update(res.touching, now);
 
   draw(w, h, pose, hands, res, state);
+  if (settings.shareLive) sendLiveFrame(source, w, h, now);
 
   if (state === 'alert') onTouchAlert(res, w, h, source);
   if (!pose) {
@@ -389,6 +391,30 @@ function draw(w, h, pose, hands, res, state) {
     }
   }
   els.banner.hidden = !(alerting && (tracker.alertedThisTouch || state === 'cooldown'));
+}
+
+// ---------------------------------------------------------------------------
+// Vista en vivo: le manda el cuadro actual (con el esqueleto) al servidor, para
+// que se pueda ver desde /live.html en otro equipo (celular, otra PC).
+
+const liveCanvas = document.createElement('canvas');
+const liveCtx = liveCanvas.getContext('2d');
+let lastLiveSend = 0;
+let liveSending = false;
+
+function sendLiveFrame(source, w, h, now) {
+  if (liveSending || now - lastLiveSend < 500) return; // ~2 cuadros por segundo alcanza para ver en vivo
+  lastLiveSend = now;
+  const scale = Math.min(1, 640 / w);
+  liveCanvas.width = Math.round(w * scale);
+  liveCanvas.height = Math.round(h * scale);
+  liveCtx.drawImage(source, 0, 0, liveCanvas.width, liveCanvas.height);
+  liveCtx.drawImage(els.overlay, 0, 0, liveCanvas.width, liveCanvas.height);
+  liveCanvas.toBlob((blob) => {
+    if (!blob) return;
+    liveSending = true;
+    fetch('/api/live', { method: 'POST', body: blob }).catch(() => {}).finally(() => { liveSending = false; });
+  }, 'image/jpeg', 0.55);
 }
 
 // ---------------------------------------------------------------------------
@@ -556,6 +582,19 @@ bindSettings();
 refreshTelegramStatus();
 listDevices().catch(() => {});
 setupInstallButton($('installBtn'), $('iosDialog'));
+
+$('shutdownBtn').addEventListener('click', async () => {
+  if (!confirm('¿Apagar DETEC MOV? Se va a detener la vigilancia, incluida la que corre en segundo plano. Para volver a usarla vas a tener que prender la PC de nuevo o abrir el acceso directo del escritorio.')) return;
+  try {
+    running = false;
+    stopSource();
+    await fetch('/api/shutdown', { method: 'POST' }).catch(() => {});
+  } finally {
+    setStatus('', 'Sistema apagado');
+    addLog('Sistema apagado desde la app');
+    document.body.innerHTML = '<main style="display:grid;place-items:center;min-height:100vh;padding:24px;text-align:center;font:16px system-ui;color:var(--muted)"><p>DETEC MOV está apagado.<br>Prendé la PC de nuevo o abrí el acceso directo del escritorio para volver a usarlo.</p></main>';
+  }
+});
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch((e) => console.warn('SW no registrado', e));

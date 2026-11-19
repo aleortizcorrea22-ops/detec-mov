@@ -10,6 +10,7 @@ const https = require('node:https');
 const fs = require('node:fs');
 const path = require('node:path');
 const { Readable } = require('node:stream');
+const { spawn } = require('node:child_process');
 
 loadEnv(path.join(__dirname, '.env'));
 
@@ -21,6 +22,9 @@ const CHAT_IDS = (process.env.TELEGRAM_CHAT_ID || '')
   .filter(Boolean);
 const TELEGRAM_API = (process.env.TELEGRAM_API_URL || 'https://api.telegram.org').replace(/\/$/, '');
 const ALLOW_PUBLIC_CAMERAS = process.env.ALLOW_PUBLIC_CAMERAS === '1';
+// Si se expone la app por internet (por ejemplo con cloudflared) para ver la cámara desde
+// afuera de la red, esta clave protege esa vista. Sin ella, cualquiera con el link vería la cámara.
+const VIEW_PASSWORD = (process.env.VIEW_PASSWORD || '').trim();
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const VENDOR_DIR = path.join(__dirname, 'node_modules', '@mediapipe', 'tasks-vision');
@@ -140,6 +144,72 @@ async function sendAlert({ text, imageDataUrl }) {
 }
 
 // ---------------------------------------------------------------------------
+// Vista en vivo: el navegador que está vigilando manda el cuadro actual (con el
+// esqueleto dibujado) y cualquier otro equipo de la red local lo puede ver en
+// /live.html. No usa la cámara directamente, así que no necesita HTTPS.
+
+let liveFrame = null; // { buf: Buffer, at: number }
+
+// ---------------------------------------------------------------------------
+// Cámaras RTSP (cámaras de seguridad): se convierten a un stream MJPEG con ffmpeg
+// para que el navegador pueda mostrarlas y analizarlas igual que una cámara HTTP.
+
+const FFMPEG_BIN = process.env.FFMPEG_PATH || 'ffmpeg';
+const JPEG_SOI = Buffer.from([0xff, 0xd8]);
+const JPEG_EOI = Buffer.from([0xff, 0xd9]);
+const MJPEG_BOUNDARY = 'detecmovframe';
+
+function streamRtspAsMjpeg(req, res, rtspUrl) {
+  const args = ['-loglevel', 'error', '-rtsp_transport', 'tcp', '-i', rtspUrl, '-an', '-f', 'mjpeg', '-q:v', '6', '-r', '8', '-'];
+  let proc;
+  try {
+    proc = spawn(FFMPEG_BIN, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+  } catch (e) {
+    return sendJson(res, 500, { error: `No se pudo iniciar ffmpeg: ${e.message}. Instalá ffmpeg y agregalo al PATH (o configurá FFMPEG_PATH en .env).` });
+  }
+
+  let stderr = '';
+  proc.stderr.on('data', (d) => { stderr = (stderr + d.toString()).slice(-2000); });
+  proc.on('error', (e) => {
+    const hint = e.code === 'ENOENT' ? 'ffmpeg no está instalado o no está en el PATH.' : e.message;
+    if (!res.headersSent) sendJson(res, 500, { error: `No se pudo iniciar ffmpeg: ${hint}` });
+    else res.end();
+  });
+
+  let started = false;
+  let buf = Buffer.alloc(0);
+  proc.stdout.on('data', (chunk) => {
+    buf = buf.length ? Buffer.concat([buf, chunk]) : chunk;
+    for (;;) {
+      const start = buf.indexOf(JPEG_SOI);
+      if (start === -1) { buf = Buffer.alloc(0); break; }
+      const end = buf.indexOf(JPEG_EOI, start + 2);
+      if (end === -1) { if (start > 0) buf = buf.slice(start); break; }
+      const frame = buf.subarray(start, end + 2);
+      buf = buf.subarray(end + 2);
+      if (!started) {
+        started = true;
+        res.writeHead(200, { 'Content-Type': `multipart/x-mixed-replace; boundary=${MJPEG_BOUNDARY}`, 'Cache-Control': 'no-store' });
+      }
+      res.write(`--${MJPEG_BOUNDARY}\r\nContent-Type: image/jpeg\r\nContent-Length: ${frame.length}\r\n\r\n`);
+      res.write(frame);
+      res.write('\r\n');
+    }
+  });
+
+  proc.on('exit', (code) => {
+    if (!started && !res.headersSent) {
+      const msg = stderr.split('\n').filter(Boolean).pop() || `ffmpeg terminó con código ${code}`;
+      sendJson(res, 502, { error: `No se pudo leer la cámara RTSP: ${msg}` });
+    } else if (!res.writableEnded) {
+      res.end();
+    }
+  });
+
+  req.on('close', () => { if (!proc.killed) proc.kill('SIGKILL'); });
+}
+
+// ---------------------------------------------------------------------------
 // Proxy de cámara IP
 
 async function proxyCamera(req, res, url) {
@@ -149,10 +219,11 @@ async function proxyCamera(req, res, url) {
   } catch {
     return sendJson(res, 400, { error: 'URL de cámara inválida' });
   }
-  if (!/^https?:$/.test(target.protocol)) return sendJson(res, 400, { error: 'Solo se admiten URLs http(s). Para RTSP ver el README.' });
   if (!ALLOW_PUBLIC_CAMERAS && !isLanHost(target.hostname)) {
     return sendJson(res, 403, { error: 'Solo se permiten cámaras de la red local (ALLOW_PUBLIC_CAMERAS=1 para desactivar)' });
   }
+  if (target.protocol === 'rtsp:') return streamRtspAsMjpeg(req, res, target.href);
+  if (!/^https?:$/.test(target.protocol)) return sendJson(res, 400, { error: 'URL de cámara no soportada. Usá http(s) o rtsp.' });
   const headers = {};
   if (target.username || target.password) {
     headers.Authorization = 'Basic ' + Buffer.from(`${decodeURIComponent(target.username)}:${decodeURIComponent(target.password)}`).toString('base64');
@@ -178,6 +249,14 @@ async function proxyCamera(req, res, url) {
 // ---------------------------------------------------------------------------
 // Rutas
 
+// true solo para conexiones que llegan directo desde esta misma PC (no a través
+// de un túnel público ni de otro equipo de la red). Se usa para lo más sensible:
+// apagar el sistema y mandar cuadros a la vista en vivo.
+function isLocalRequest(req) {
+  const addr = (req.socket.remoteAddress || '').replace(/^::ffff:/, '');
+  return (addr === '127.0.0.1' || addr === '::1') && !req.headers['x-forwarded-for'] && !req.headers['cf-connecting-ip'];
+}
+
 async function handle(req, res) {
   const url = new URL(req.url, 'http://localhost');
   const p = url.pathname;
@@ -185,6 +264,41 @@ async function handle(req, res) {
   if (p === '/api/status' && req.method === 'GET') {
     const localModels = fs.existsSync(path.join(PUBLIC_DIR, 'models', 'pose_landmarker_full.task'));
     return sendJson(res, 200, { telegram: Boolean(TOKEN && CHAT_IDS.length), chats: CHAT_IDS.length, hasToken: Boolean(TOKEN), localModels });
+  }
+
+  // Apaga el servidor (y, con él, la vigilancia en segundo plano). Vuelve a arrancar
+  // recién la próxima vez que se prenda la PC, o abriendo el acceso directo a mano.
+  if (p === '/api/shutdown' && req.method === 'POST') {
+    if (!isLocalRequest(req)) return sendJson(res, 403, { error: 'Solo se puede apagar desde esta misma PC.' });
+    console.log('[sistema] apagado pedido desde la app');
+    sendJson(res, 200, { ok: true });
+    setTimeout(() => process.exit(0), 300);
+    return;
+  }
+
+  // Recibe el cuadro actual (con el esqueleto dibujado) de quien está vigilando.
+  if (p === '/api/live' && req.method === 'POST') {
+    if (!isLocalRequest(req)) return sendJson(res, 403, { error: 'No permitido.' });
+    const buf = await readBody(req, 4 * 1024 * 1024);
+    if (buf.length) liveFrame = { buf, at: Date.now() };
+    res.writeHead(204);
+    return res.end();
+  }
+
+  // Lo que ve cualquier otro equipo de la red en /live.html.
+  if (p === '/api/live.jpg' && req.method === 'GET') {
+    if (!isLocalRequest(req) && VIEW_PASSWORD && url.searchParams.get('key') !== VIEW_PASSWORD) {
+      return sendJson(res, 401, { error: 'Clave incorrecta o faltante (agregá ?key=... a la URL).' });
+    }
+    if (!liveFrame || Date.now() - liveFrame.at > 15000) return sendJson(res, 404, { error: 'No hay vista en vivo activa ahora mismo.' });
+    res.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'no-store', 'Content-Length': liveFrame.buf.length });
+    return res.end(liveFrame.buf);
+  }
+
+  // Estos dos solo los necesita el propio navegador que está vigilando, en esta misma PC.
+  // Si la app se expone por un túnel público, no deben quedar accesibles desde afuera.
+  if ((p === '/api/alert' || p === '/api/camera' || p === '/api/telegram/chats') && !isLocalRequest(req)) {
+    return sendJson(res, 403, { error: 'No disponible desde afuera de esta PC.' });
   }
 
   if (p === '/api/alert' && req.method === 'POST') {

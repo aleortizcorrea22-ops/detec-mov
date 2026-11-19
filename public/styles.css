@@ -80,6 +80,8 @@ input[type=range] { width: 100%; accent-color: var(--primary); }
 }
 .btn:disabled { opacity: .5; cursor: default; }
 .btn-primary, .btn-install { background: var(--primary); border-color: var(--primary); color: var(--primary-text); }
+.btn-danger { background: transparent; border-color: var(--alert); color: var(--alert); }
+.btn-danger:hover { background: var(--alert); color: #fff; }
 .mono { font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace; background: var(--bg); padding: 8px; border-radius: 8px; white-space: pre-wrap; word-break: break-all; }
 .log { list-style: none; padding: 0; margin: 0; max-height: 240px; overflow: auto; font-size: 13px; }
 .log li { padding: 6px 0; border-bottom: 1px solid var(--border); }
