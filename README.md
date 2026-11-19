@@ -66,13 +66,24 @@ Muchas cámaras IP ofrecen además una URL de foto (snapshot) o MJPEG; busca "sn
 
 ### Usarla desde el celular
 
-Los navegadores solo dejan usar la cámara e instalar la app en `https://` (o en `localhost`). Para abrir la app desde el celular:
+Los navegadores solo dejan usar la cámara e instalar la app en `https://` (o en `localhost`). Para abrir la app con el servidor propio desde el celular:
 
 - **Rápido para probar:** crea un túnel HTTPS, por ejemplo `npx cloudflared tunnel --url http://localhost:3000`, y abre la URL `https://….trycloudflare.com` que te muestra.
 - **Red local:** genera un certificado (por ejemplo con [mkcert](https://github.com/FiloSottile/mkcert)) y completa `HTTPS_CERT` y `HTTPS_KEY` en `.env`.
 - **Más adelante:** publicar el servidor en un hosting con HTTPS.
 
-Si usas un túnel o publicas la app en internet, cualquiera que tenga el enlace podrá abrirla y mandar alertas a tu Telegram. Para pruebas está bien. Antes de dejarla publicada de forma fija, hay que agregar una contraseña.
+Si usas un túnel o publicas la app en internet, cualquiera que tenga el enlace podrá abrirla; `/api/alert`, `/api/camera` y `/api/telegram/chats` quedan bloqueados para pedidos que no vengan de la propia PC, así que no se pueden usar desde afuera aunque alguien tenga el link.
+
+### Modo "solo celular" (sin servidor ni PC)
+
+Para dejar un celular apoyado frente a la persona, usando su propia cámara, sin depender de ninguna PC: la app se puede publicar como página estática (por ejemplo en GitHub Pages) y, si no detecta ningún servidor propio detrás, manda las alertas directo a la Bot API de Telegram desde el propio navegador.
+
+1. Abrí la página publicada en el celular (tiene que ser `https://`, GitHub Pages ya lo es) e instalala (*Agregar a pantalla de inicio* / botón Instalar).
+2. En la sección **Telegram** vas a ver dos campos para cargar el token del bot y el chat_id. Quedan guardados solo en ese aparato (en `localStorage`), nunca se mandan a ningún servidor.
+3. Elegí **Cámara del equipo** como fuente (la cámara del propio celular) y tocá **Iniciar**.
+4. Dejá el celular enchufado al cargador, con la app abierta y la pantalla prendida: si el celular se bloquea o se cambia de app, el navegador frena la cámara y deja de vigilar.
+
+Este modo no necesita `server.js` corriendo en ningún lado. El token queda expuesto solo en ese celular (nadie más lo ve), como cualquier dato guardado en el navegador de ese aparato.
 
 ### Instalar la app
 
