@@ -68,7 +68,19 @@ function bindSettings() {
   on(els.drawSkeleton, 'drawSkeleton');
   on(els.mirror, 'mirror');
   on(els.shareLive, 'shareLive');
-  els.deviceSelect.addEventListener('change', () => { settings.deviceId = els.deviceSelect.value; saveSettings(); });
+  els.deviceSelect.addEventListener('change', async () => {
+    settings.deviceId = els.deviceSelect.value;
+    saveSettings();
+    if (running && settings.sourceType === 'device') {
+      try {
+        if (stream) stream.getTracks().forEach((t) => t.stop());
+        await startSource();
+        addLog('Cámara cambiada: ' + (els.deviceSelect.selectedOptions[0]?.textContent || ''));
+      } catch (err) {
+        addLog('No se pudo cambiar de cámara: ' + err.message);
+      }
+    }
+  });
   els.model.addEventListener('change', async () => {
     settings.model = els.model.value;
     saveSettings();
@@ -157,14 +169,14 @@ function cameraProxyUrl(url) {
 async function listDevices() {
   if (!navigator.mediaDevices?.enumerateDevices) return;
   const devices = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput');
-  els.deviceSelect.innerHTML = '<option value="">Predeterminada</option>';
+  els.deviceSelect.innerHTML = '<option value="">Cámara trasera</option><option value="front">Cámara delantera</option>';
   devices.forEach((d, i) => {
     const o = document.createElement('option');
     o.value = d.deviceId;
     o.textContent = d.label || `Cámara ${i + 1}`;
     els.deviceSelect.append(o);
   });
-  if (devices.some((d) => d.deviceId === settings.deviceId)) els.deviceSelect.value = settings.deviceId;
+  if (settings.deviceId === 'front' || devices.some((d) => d.deviceId === settings.deviceId)) els.deviceSelect.value = settings.deviceId;
 }
 
 async function startSource() {
@@ -176,9 +188,9 @@ async function startSource() {
     stream = await navigator.mediaDevices.getUserMedia({
       audio: false,
       video: {
-        deviceId: settings.deviceId ? { exact: settings.deviceId } : undefined,
+        deviceId: settings.deviceId && settings.deviceId !== 'front' ? { exact: settings.deviceId } : undefined,
         width: { ideal: 1280 }, height: { ideal: 720 },
-        facingMode: settings.deviceId ? undefined : 'user',
+        facingMode: settings.deviceId === 'front' ? 'user' : settings.deviceId ? undefined : 'environment',
       },
     });
     els.video.srcObject = stream;
