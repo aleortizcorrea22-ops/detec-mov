@@ -10,7 +10,7 @@ const els = {
   urlField: $('urlField'), cameraUrl: $('cameraUrl'), startBtn: $('startBtn'), stopBtn: $('stopBtn'),
   sensitivity: $('sensitivity'), sensVal: $('sensVal'), holdMs: $('holdMs'), holdVal: $('holdVal'),
   cooldownS: $('cooldownS'), coolVal: $('coolVal'), model: $('model'), includeFace: $('includeFace'), useHands: $('useHands'),
-  sendPhoto: $('sendPhoto'), beep: $('beep'), drawSkeleton: $('drawSkeleton'), mirror: $('mirror'), viewer: $('viewer'), shareLive: $('shareLive'), liveWebrtc: $('liveWebrtc'), liveMuteBtn: $('liveMuteBtn'),
+  sendPhoto: $('sendPhoto'), beep: $('beep'), drawSkeleton: $('drawSkeleton'), mirror: $('mirror'), viewer: $('viewer'), shareLive: $('shareLive'), liveWebrtc: $('liveWebrtc'), liveAudioRow: $('liveAudioRow'), liveMicBtn: $('liveMicBtn'), liveSoundBtn: $('liveSoundBtn'),
   tgStatus: $('tgStatus'), testBtn: $('testBtn'), findChatBtn: $('findChatBtn'), chatList: $('chatList'), log: $('log'),
   directTelegramFields: $('directTelegramFields'), directToken: $('directToken'), directChatIds: $('directChatIds'), saveDirectBtn: $('saveDirectBtn'),
 };
@@ -20,7 +20,7 @@ const els = {
 
 const DEFAULTS = {
   sourceType: 'device', deviceId: '', cameraUrl: '', sensitivity: 1, holdMs: 600, cooldownS: 30,
-  model: 'full', includeFace: false, useHands: true, sendPhoto: true, beep: true, drawSkeleton: true, mirror: false, shareLive: false, liveWebrtc: false, liveMuted: false,
+  model: 'full', includeFace: false, useHands: true, sendPhoto: true, beep: true, drawSkeleton: true, mirror: false, shareLive: false, liveWebrtc: false, liveMicMuted: false, liveSoundMuted: false,
 };
 const settings = { ...DEFAULTS, ...readSettings() };
 
@@ -50,8 +50,11 @@ function bindSettings() {
     tracker.holdMs = settings.holdMs;
     tracker.cooldownMs = settings.cooldownS * 1000;
     els.viewer.classList.toggle('mirrored', settings.mirror);
-    els.liveMuteBtn.hidden = !settings.liveWebrtc;
-    els.liveMuteBtn.textContent = settings.liveMuted ? '🔊 Activar micrófono y sonido' : '🔇 Silenciar micrófono y sonido';
+    els.liveAudioRow.hidden = !settings.liveWebrtc;
+    els.liveMicBtn.hidden = !settings.liveWebrtc;
+    els.liveMicBtn.textContent = settings.liveMicMuted ? '🎤 Activar micrófono' : '🎤 Silenciar micrófono';
+    els.liveSoundBtn.hidden = !settings.liveWebrtc;
+    els.liveSoundBtn.textContent = settings.liveSoundMuted ? '🔈 Activar sonido' : '🔈 Silenciar sonido';
   };
   const on = (el, key, parse = (v) => v) => el.addEventListener('input', () => {
     settings[key] = parse(el.type === 'checkbox' ? el.checked : el.value);
@@ -71,15 +74,29 @@ function bindSettings() {
   on(els.mirror, 'mirror');
   on(els.shareLive, 'shareLive');
   on(els.liveWebrtc, 'liveWebrtc');
-  els.liveMuteBtn.addEventListener('click', () => {
-    if (!settings.liveMuted) {
-      if (!confirm('¿Seguro que querés silenciar el micrófono y el sonido? Quien mire en vivo no va a escuchar ni va a poder hablar.')) return;
+  els.liveMicBtn.addEventListener('click', () => {
+    if (!settings.liveMicMuted) {
+      if (!confirm('¿Seguro que querés silenciar el micrófono? Quien mire en vivo no va a poder hablar.')) return;
       if (!confirm('¿Está realmente seguro? Tocá Aceptar para silenciar.')) return;
-      settings.liveMuted = true;
-      addLog('Micrófono y sonido del video en vivo silenciados', 'alert');
+      settings.liveMicMuted = true;
+      addLog('Micrófono del video en vivo silenciado', 'alert');
     } else {
-      settings.liveMuted = false;
-      addLog('Micrófono y sonido del video en vivo reactivados');
+      settings.liveMicMuted = false;
+      addLog('Micrófono del video en vivo reactivado');
+    }
+    saveSettings();
+    applyLiveMute();
+    refresh();
+  });
+  els.liveSoundBtn.addEventListener('click', () => {
+    if (!settings.liveSoundMuted) {
+      if (!confirm('¿Seguro que querés silenciar el sonido? No vas a escuchar lo que diga quien mira en vivo.')) return;
+      if (!confirm('¿Está realmente seguro? Tocá Aceptar para silenciar.')) return;
+      settings.liveSoundMuted = true;
+      addLog('Sonido del video en vivo silenciado', 'alert');
+    } else {
+      settings.liveSoundMuted = false;
+      addLog('Sonido del video en vivo reactivado');
     }
     saveSettings();
     applyLiveMute();
@@ -312,7 +329,7 @@ function openLivePeer(id) {
     let tracks = [...stream.getVideoTracks()];
     if (liveMicStream) {
       const micTrack = liveMicStream.getAudioTracks()[0];
-      if (micTrack) { micTrack.enabled = !settings.liveMuted; tracks.push(micTrack); }
+      if (micTrack) { micTrack.enabled = !settings.liveMicMuted; tracks.push(micTrack); }
     }
     call.answer(new MediaStream(tracks));
     call.on('stream', (remoteStream) => {
@@ -323,7 +340,7 @@ function openLivePeer(id) {
         document.body.appendChild(liveAudioEl);
       }
       liveAudioEl.srcObject = remoteStream;
-      liveAudioEl.muted = !!settings.liveMuted;
+      liveAudioEl.muted = !!settings.liveSoundMuted;
     });
   });
   livePeer.on('disconnected', () => {
@@ -359,8 +376,8 @@ async function startLiveShare() {
 
 function applyLiveMute() {
   const micTrack = liveMicStream?.getAudioTracks()[0];
-  if (micTrack) micTrack.enabled = !settings.liveMuted;
-  if (liveAudioEl) liveAudioEl.muted = !!settings.liveMuted;
+  if (micTrack) micTrack.enabled = !settings.liveMicMuted;
+  if (liveAudioEl) liveAudioEl.muted = !!settings.liveSoundMuted;
 }
 
 function stopLiveShare() {

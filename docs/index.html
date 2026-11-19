@@ -66,6 +66,13 @@
         <button id="startBtn" class="btn btn-primary">Iniciar</button>
         <button id="stopBtn" class="btn" disabled>Detener</button>
       </div>
+      <div id="liveAudioRow">
+        <p class="muted" style="margin:10px 0 4px">Audio en vivo</p>
+        <div class="row">
+          <button id="liveMicBtn" class="btn" hidden>🎤 Silenciar micrófono</button>
+          <button id="liveSoundBtn" class="btn" hidden>🔈 Silenciar sonido</button>
+        </div>
+      </div>
 
       <h2>Detección</h2>
       <label class="field">
@@ -96,9 +103,6 @@
       <label class="check"><input id="mirror" type="checkbox"> Espejar el video (como un espejo)</label>
       <label class="check"><input id="shareLive" type="checkbox"> Compartir vista en vivo (para verla desde /live.html en otro equipo)</label>
       <label class="check"><input id="liveWebrtc" type="checkbox"> Permitir ver esta cámara en vivo desde otro celular (manda un link por Telegram, sin servidor)</label>
-      <div class="row">
-        <button id="liveMuteBtn" class="btn" hidden>🔇 Silenciar micrófono y sonido</button>
-      </div>
 
       <h2>Telegram</h2>
       <p id="tgStatus" class="muted">Comprobando…</p>
