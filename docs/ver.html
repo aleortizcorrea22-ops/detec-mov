@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>DETEC MOV — Ver en vivo</title>
+  <style>
+    :root { color-scheme: dark; }
+    html, body { margin: 0; height: 100%; background: #0b0f10; color: #e6edf0; font: 16px system-ui, sans-serif; }
+    body { display: grid; grid-template-rows: auto 1fr; }
+    header { padding: 10px 14px; display: flex; align-items: center; gap: 10px; }
+    #status { color: #9aa7ab; font-size: 14px; }
+    .stage { display: grid; place-items: center; padding: 10px; }
+    video { max-width: 100%; max-height: calc(100vh - 60px); border-radius: 8px; background: #000; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: #666; display: inline-block; }
+    .dot.live { background: #ef4444; animation: pulse 1.2s infinite; }
+    @keyframes pulse { 50% { opacity: .4; } }
+    p.hint { color: #9aa7ab; text-align: center; padding: 0 20px; }
+  </style>
+</head>
+<body>
+  <header>
+    <span id="dot" class="dot"></span>
+    <span id="status">Conectando…</span>
+  </header>
+  <div class="stage">
+    <video id="video" playsinline autoplay muted></video>
+    <p id="hint" class="hint" hidden>Si no conecta, puede ser que el celular que vigila esté apagado, sin internet, o que la red de datos no permita la conexión directa (pasa con algunas compañías). Probá con Wi-Fi.</p>
+  </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
+  <script>
+    const video = document.getElementById('video');
+    const status = document.getElementById('status');
+    const dot = document.getElementById('dot');
+    const hint = document.getElementById('hint');
+    const remoteId = location.hash.slice(1);
+
+    function setStatus(text, live) {
+      status.textContent = text;
+      dot.classList.toggle('live', !!live);
+    }
+
+    if (!remoteId) {
+      setStatus('Falta el link completo (con el código después de #).');
+      hint.hidden = false;
+    } else if (typeof Peer === 'undefined') {
+      setStatus('Sin conexión a internet.');
+      hint.hidden = false;
+    } else {
+      const peer = new Peer();
+      peer.on('open', () => {
+        setStatus('Llamando…');
+        const call = peer.call(remoteId, new MediaStream());
+        call.on('stream', (remoteStream) => {
+          video.srcObject = remoteStream;
+          setStatus('En vivo', true);
+        });
+        call.on('close', () => setStatus('Se terminó la llamada.'));
+        call.on('error', () => { setStatus('No se pudo conectar.'); hint.hidden = false; });
+        setTimeout(() => {
+          if (!video.srcObject) { setStatus('No responde.'); hint.hidden = false; }
+        }, 15000);
+      });
+      peer.on('error', (err) => {
+        setStatus(`Error: ${err.type || err.message}`);
+        hint.hidden = false;
+      });
+    }
+  </script>
+</body>
+</html>

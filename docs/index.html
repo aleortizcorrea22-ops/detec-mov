@@ -94,6 +94,7 @@
       <label class="check"><input id="drawSkeleton" type="checkbox"> Dibujar esqueleto</label>
       <label class="check"><input id="mirror" type="checkbox"> Espejar el video (como un espejo)</label>
       <label class="check"><input id="shareLive" type="checkbox"> Compartir vista en vivo (para verla desde /live.html en otro equipo)</label>
+      <label class="check"><input id="liveWebrtc" type="checkbox"> Permitir ver esta cámara en vivo desde otro celular (manda un link por Telegram, sin servidor)</label>
 
       <h2>Telegram</h2>
       <p id="tgStatus" class="muted">Comprobando…</p>
@@ -130,6 +131,7 @@
     <form method="dialog"><button class="btn btn-primary">Entendido</button></form>
   </dialog>
 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
   <script type="module" src="js/app.js"></script>
 </body>
 </html>

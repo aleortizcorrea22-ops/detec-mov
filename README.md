@@ -85,6 +85,14 @@ Para dejar un celular apoyado frente a la persona, usando su propia cámara, sin
 
 Este modo no necesita `server.js` corriendo en ningún lado. El token queda expuesto solo en ese celular (nadie más lo ve), como cualquier dato guardado en el navegador de ese aparato.
 
+#### Ver esa cámara en vivo desde otro celular
+
+Con el casillero **"Permitir ver esta cámara en vivo desde otro celular"** activado, al tocar Iniciar la app manda por Telegram un link (del tipo `.../ver.html#id-al-azar`). Quien abra ese link desde otro celular ve el video en vivo de la cámara que está vigilando, conectado directo entre los dos aparatos (como una videollamada de un solo lado), sin pasar por ningún servidor propio.
+
+- El link es al azar y distinto cada vez que se inicia la vigilancia; solo lo tiene quien reciba el mensaje de Telegram.
+- Funciona mejor por Wi-Fi. Con algunas compañías de datos móviles la conexión directa entre los dos celulares puede no establecerse (CGNAT); si pasa eso, probá conectando el que mira por Wi-Fi.
+- No manda el esqueleto dibujado, solo la imagen cruda de la cámara.
+
 ### Instalar la app
 
 - **Chrome / Edge (PC y Android):** botón **Instalar** arriba a la derecha.

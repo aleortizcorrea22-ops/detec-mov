@@ -10,7 +10,7 @@ const els = {
   urlField: $('urlField'), cameraUrl: $('cameraUrl'), startBtn: $('startBtn'), stopBtn: $('stopBtn'),
   sensitivity: $('sensitivity'), sensVal: $('sensVal'), holdMs: $('holdMs'), holdVal: $('holdVal'),
   cooldownS: $('cooldownS'), coolVal: $('coolVal'), model: $('model'), includeFace: $('includeFace'), useHands: $('useHands'),
-  sendPhoto: $('sendPhoto'), beep: $('beep'), drawSkeleton: $('drawSkeleton'), mirror: $('mirror'), viewer: $('viewer'), shareLive: $('shareLive'),
+  sendPhoto: $('sendPhoto'), beep: $('beep'), drawSkeleton: $('drawSkeleton'), mirror: $('mirror'), viewer: $('viewer'), shareLive: $('shareLive'), liveWebrtc: $('liveWebrtc'),
   tgStatus: $('tgStatus'), testBtn: $('testBtn'), findChatBtn: $('findChatBtn'), chatList: $('chatList'), log: $('log'),
   directTelegramFields: $('directTelegramFields'), directToken: $('directToken'), directChatIds: $('directChatIds'), saveDirectBtn: $('saveDirectBtn'),
 };
@@ -20,7 +20,7 @@ const els = {
 
 const DEFAULTS = {
   sourceType: 'device', deviceId: '', cameraUrl: '', sensitivity: 1, holdMs: 600, cooldownS: 30,
-  model: 'full', includeFace: false, useHands: true, sendPhoto: true, beep: true, drawSkeleton: true, mirror: false, shareLive: false,
+  model: 'full', includeFace: false, useHands: true, sendPhoto: true, beep: true, drawSkeleton: true, mirror: false, shareLive: false, liveWebrtc: false,
 };
 const settings = { ...DEFAULTS, ...readSettings() };
 
@@ -38,7 +38,7 @@ function bindSettings() {
   els.holdMs.value = settings.holdMs;
   els.cooldownS.value = settings.cooldownS;
   els.model.value = settings.model;
-  for (const k of ['includeFace', 'useHands', 'sendPhoto', 'beep', 'drawSkeleton', 'mirror', 'shareLive']) els[k].checked = settings[k];
+  for (const k of ['includeFace', 'useHands', 'sendPhoto', 'beep', 'drawSkeleton', 'mirror', 'shareLive', 'liveWebrtc']) els[k].checked = settings[k];
 
   const refresh = () => {
     els.sensVal.textContent = `${Math.round(settings.sensitivity * 100)}%`;
@@ -68,6 +68,7 @@ function bindSettings() {
   on(els.drawSkeleton, 'drawSkeleton');
   on(els.mirror, 'mirror');
   on(els.shareLive, 'shareLive');
+  on(els.liveWebrtc, 'liveWebrtc');
   els.deviceSelect.addEventListener('change', async () => {
     settings.deviceId = els.deviceSelect.value;
     saveSettings();
@@ -253,6 +254,42 @@ function stopSource() {
   clearTimeout(snapshotTimer);
   els.ipImg.removeAttribute('src');
   els.ipImg.hidden = true;
+}
+
+// ---------------------------------------------------------------------------
+// Video en vivo celular a celular (WebRTC), sin servidor propio.
+// Usa PeerJS (señalización gratuita en 0.peerjs.com) solo para que los dos
+// celulares se encuentren; el video después va directo entre los dos.
+
+let livePeer = null;
+
+function startLiveShare() {
+  if (!settings.liveWebrtc || settings.sourceType !== 'device' || !stream) return;
+  if (typeof Peer === 'undefined') {
+    addLog('No se pudo activar el video en vivo (sin conexión a internet)', 'alert');
+    return;
+  }
+  try {
+    livePeer = new Peer();
+    livePeer.on('open', async (id) => {
+      const link = `${location.origin}${location.pathname.replace(/[^/]*$/, '')}ver.html#${id}`;
+      addLog(`Video en vivo listo: ${link}`);
+      try {
+        await sendAlert({ text: `🔴 Ver esta cámara en vivo:\n${link}` });
+      } catch (e) {
+        addLog(`No se pudo mandar el link por Telegram: ${e.message}`, 'alert');
+      }
+    });
+    livePeer.on('call', (call) => call.answer(stream));
+    livePeer.on('error', (err) => addLog(`Video en vivo: ${err.type || err.message}`, 'alert'));
+  } catch (e) {
+    addLog(`No se pudo activar el video en vivo: ${e.message}`, 'alert');
+  }
+}
+
+function stopLiveShare() {
+  livePeer?.destroy();
+  livePeer = null;
 }
 
 /** Devuelve la imagen a analizar en este momento (o null si no hay cuadro nuevo). */
@@ -601,6 +638,7 @@ els.startBtn.addEventListener('click', async () => {
     els.stopBtn.disabled = false;
     addLog('Vigilancia iniciada');
     try { wakeLock = await navigator.wakeLock?.request('screen'); } catch { /* opcional */ }
+    startLiveShare();
     loop();
   } catch (e) {
     running = false;
@@ -613,6 +651,7 @@ els.startBtn.addEventListener('click', async () => {
 
 els.stopBtn.addEventListener('click', () => {
   running = false;
+  stopLiveShare();
   stopSource();
   wakeLock?.release?.();
   wakeLock = null;

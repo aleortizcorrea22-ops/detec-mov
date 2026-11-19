@@ -7,7 +7,7 @@
 const VERSION = 'detecmov-v1';
 const BASE = new URL('.', self.location.href); // ej.: https://host/ o https://host/detec-mov/
 const SHELL = [
-  './', 'index.html', 'styles.css', 'manifest.webmanifest',
+  './', 'index.html', 'ver.html', 'styles.css', 'manifest.webmanifest',
   'js/app.js', 'js/rules.js', 'js/install.js', 'js/telegram-direct.js',
   'icons/icon-192.png', 'icons/icon-512.png',
 ].map((p) => new URL(p, BASE).href);
@@ -32,7 +32,7 @@ self.addEventListener('fetch', (e) => {
 
   // Librería y modelos de detección: pesados, no cambian, y pueden venir de otro origen
   // (CDN) si no hay servidor propio. Se guardan y se reusan aunque no haya red.
-  const heavy = url.pathname.includes('/vendor/') || url.pathname.includes('/models/') || url.hostname === 'storage.googleapis.com' || url.hostname === 'cdn.jsdelivr.net';
+  const heavy = url.pathname.includes('/vendor/') || url.pathname.includes('/models/') || url.hostname === 'storage.googleapis.com' || url.hostname === 'cdn.jsdelivr.net' || url.hostname === 'cdnjs.cloudflare.com';
   if (heavy) {
     e.respondWith(
       caches.open(`${VERSION}-models`).then(async (c) => {
