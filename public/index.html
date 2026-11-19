@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>DETEC MOV</title>
+  <meta name="description" content="Detecta cuando la persona se toca o rasca la cabeza y avisa por Telegram.">
+  <meta name="theme-color" content="#0f766e">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="DETEC MOV">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="icons/icon-192.png" alt="" width="32" height="32">
+      <span>DETEC MOV</span>
+    </div>
+    <button id="installBtn" class="btn btn-install" hidden>Instalar</button>
+  </header>
+
+  <main>
+    <section class="stage">
+      <div id="viewer" class="viewer">
+        <video id="video" playsinline muted autoplay></video>
+        <img id="ipImg" alt="" crossorigin="anonymous" hidden>
+        <canvas id="overlay"></canvas>
+        <div id="placeholder" class="placeholder"><span>Elige una cámara y presiona <b>Iniciar</b></span></div>
+        <div id="banner" class="banner" hidden>⚠️ Se tocó la cabeza</div>
+      </div>
+      <div class="statusbar">
+        <span id="statusDot" class="dot"></span>
+        <span id="statusText">Detenido</span>
+        <span class="spacer"></span>
+        <span id="fps" class="muted"></span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Cámara</h2>
+      <label class="field">
+        <span>Fuente</span>
+        <select id="sourceType">
+          <option value="device">Cámara del equipo / Iriun Webcam</option>
+          <option value="mjpeg">Cámara IP (stream MJPEG por HTTP)</option>
+          <option value="snapshot">Cámara IP (foto JPG por HTTP)</option>
+        </select>
+      </label>
+      <label class="field" id="deviceField">
+        <span>Dispositivo</span>
+        <select id="deviceSelect"><option value="">Predeterminada</option></select>
+      </label>
+      <label class="field" id="urlField" hidden>
+        <span>URL de la cámara</span>
+        <input id="cameraUrl" type="url" placeholder="http://192.168.1.50:8080/video" autocomplete="off">
+        <small class="muted">Ej.: app "IP Webcam" de Android → <code>http://IP:8080/video</code> (MJPEG) o <code>http://IP:8080/shot.jpg</code> (foto).</small>
+      </label>
+      <div class="row">
+        <button id="startBtn" class="btn btn-primary">Iniciar</button>
+        <button id="stopBtn" class="btn" disabled>Detener</button>
+      </div>
+
+      <h2>Detección</h2>
+      <label class="field">
+        <span>Sensibilidad (tamaño de la zona de la cabeza): <b id="sensVal"></b></span>
+        <input id="sensitivity" type="range" min="0.6" max="1.6" step="0.05">
+      </label>
+      <label class="field">
+        <span>Tiempo mínimo de contacto: <b id="holdVal"></b></span>
+        <input id="holdMs" type="range" min="200" max="3000" step="100">
+      </label>
+      <label class="field">
+        <span>Espera entre alertas: <b id="coolVal"></b></span>
+        <input id="cooldownS" type="range" min="5" max="300" step="5">
+      </label>
+      <label class="field">
+        <span>Modelo de pose</span>
+        <select id="model">
+          <option value="lite">Liviano (más rápido, celulares)</option>
+          <option value="full">Completo (recomendado)</option>
+          <option value="heavy">Pesado (mejor de lejos, más lento)</option>
+        </select>
+      </label>
+      <label class="check"><input id="includeFace" type="checkbox"> Contar también tocarse la cara (boca, mentón)</label>
+      <label class="check"><input id="useHands" type="checkbox"> Detectar también los dedos de la mano (más preciso de cerca)</label>
+      <label class="check"><input id="sendPhoto" type="checkbox"> Enviar foto con la alerta</label>
+      <label class="check"><input id="beep" type="checkbox"> Sonido en este equipo al detectar</label>
+      <label class="check"><input id="drawSkeleton" type="checkbox"> Dibujar esqueleto</label>
+
+      <h2>Telegram</h2>
+      <p id="tgStatus" class="muted">Comprobando…</p>
+      <div class="row">
+        <button id="testBtn" class="btn">Enviar alerta de prueba</button>
+        <button id="findChatBtn" class="btn">Buscar mi chat_id</button>
+      </div>
+      <pre id="chatList" class="mono" hidden></pre>
+
+      <h2>Eventos</h2>
+      <ul id="log" class="log"></ul>
+    </section>
+  </main>
+
+  <dialog id="iosDialog">
+    <h3>Instalar en iPhone / iPad</h3>
+    <ol>
+      <li>Abre esta página en <b>Safari</b>.</li>
+      <li>Toca el botón <b>Compartir</b> (cuadrado con flecha).</li>
+      <li>Elige <b>Agregar a pantalla de inicio</b>.</li>
+    </ol>
+    <form method="dialog"><button class="btn btn-primary">Entendido</button></form>
+  </dialog>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

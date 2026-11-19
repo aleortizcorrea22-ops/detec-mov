@@ -1,0 +1,19 @@
+{
+  "name": "detec-mov",
+  "version": "0.1.0",
+  "private": true,
+  "description": "PWA que detecta cuando la persona se toca/rasca la cabeza y env\u00eda una alerta por Telegram.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test test/*.test.mjs",
+    "models": "node scripts/download-models.mjs"
+  },
+  "engines": {
+    "node": ">=18.17"
+  },
+  "dependencies": {
+    "@mediapipe/tasks-vision": "0.10.35"
+  }
+}
