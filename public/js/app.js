@@ -9,7 +9,7 @@ const els = {
   urlField: $('urlField'), cameraUrl: $('cameraUrl'), startBtn: $('startBtn'), stopBtn: $('stopBtn'),
   sensitivity: $('sensitivity'), sensVal: $('sensVal'), holdMs: $('holdMs'), holdVal: $('holdVal'),
   cooldownS: $('cooldownS'), coolVal: $('coolVal'), model: $('model'), includeFace: $('includeFace'), useHands: $('useHands'),
-  sendPhoto: $('sendPhoto'), beep: $('beep'), drawSkeleton: $('drawSkeleton'),
+  sendPhoto: $('sendPhoto'), beep: $('beep'), drawSkeleton: $('drawSkeleton'), mirror: $('mirror'), viewer: $('viewer'),
   tgStatus: $('tgStatus'), testBtn: $('testBtn'), findChatBtn: $('findChatBtn'), chatList: $('chatList'), log: $('log'),
 };
 
@@ -18,7 +18,7 @@ const els = {
 
 const DEFAULTS = {
   sourceType: 'device', deviceId: '', cameraUrl: '', sensitivity: 1, holdMs: 600, cooldownS: 30,
-  model: 'full', includeFace: false, useHands: true, sendPhoto: true, beep: true, drawSkeleton: true,
+  model: 'full', includeFace: false, useHands: true, sendPhoto: true, beep: true, drawSkeleton: true, mirror: true,
 };
 const settings = { ...DEFAULTS, ...readSettings() };
 
@@ -36,7 +36,7 @@ function bindSettings() {
   els.holdMs.value = settings.holdMs;
   els.cooldownS.value = settings.cooldownS;
   els.model.value = settings.model;
-  for (const k of ['includeFace', 'useHands', 'sendPhoto', 'beep', 'drawSkeleton']) els[k].checked = settings[k];
+  for (const k of ['includeFace', 'useHands', 'sendPhoto', 'beep', 'drawSkeleton', 'mirror']) els[k].checked = settings[k];
 
   const refresh = () => {
     els.sensVal.textContent = `${Math.round(settings.sensitivity * 100)}%`;
@@ -47,6 +47,7 @@ function bindSettings() {
     els.deviceField.hidden = ip;
     tracker.holdMs = settings.holdMs;
     tracker.cooldownMs = settings.cooldownS * 1000;
+    els.viewer.classList.toggle('mirrored', settings.mirror);
   };
   const on = (el, key, parse = (v) => v) => el.addEventListener('input', () => {
     settings[key] = parse(el.type === 'checkbox' ? el.checked : el.value);
@@ -63,6 +64,7 @@ function bindSettings() {
   on(els.sendPhoto, 'sendPhoto');
   on(els.beep, 'beep');
   on(els.drawSkeleton, 'drawSkeleton');
+  on(els.mirror, 'mirror');
   els.deviceSelect.addEventListener('change', () => { settings.deviceId = els.deviceSelect.value; saveSettings(); });
   els.model.addEventListener('change', async () => {
     settings.model = els.model.value;
