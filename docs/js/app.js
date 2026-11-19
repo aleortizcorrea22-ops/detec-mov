@@ -263,6 +263,8 @@ function stopSource() {
 
 let livePeer = null;
 let liveLinkSent = false;
+let liveMicStream = null;
+let liveAudioEl = null;
 
 function liveShareId() {
   let id = localStorage.getItem('detecmov.live.id');
@@ -286,7 +288,20 @@ function openLivePeer(id) {
       addLog(`No se pudo mandar el link por Telegram: ${e.message}`, 'alert');
     }
   });
-  livePeer.on('call', (call) => call.answer(stream));
+  livePeer.on('call', async (call) => {
+    let tracks = [...stream.getVideoTracks()];
+    if (liveMicStream) tracks.push(...liveMicStream.getAudioTracks());
+    call.answer(new MediaStream(tracks));
+    call.on('stream', (remoteStream) => {
+      // Lo que diga quien mira, para que lo escuche la persona.
+      if (!liveAudioEl) {
+        liveAudioEl = document.createElement('audio');
+        liveAudioEl.autoplay = true;
+        document.body.appendChild(liveAudioEl);
+      }
+      liveAudioEl.srcObject = remoteStream;
+    });
+  });
   livePeer.on('disconnected', () => {
     if (settings.liveWebrtc) setTimeout(() => livePeer?.reconnect(), 2000);
   });
@@ -300,7 +315,7 @@ function openLivePeer(id) {
   });
 }
 
-function startLiveShare() {
+async function startLiveShare() {
   if (!settings.liveWebrtc || settings.sourceType !== 'device' || !stream) return;
   if (typeof Peer === 'undefined') {
     addLog('No se pudo activar el video en vivo (sin conexión a internet)', 'alert');
@@ -308,6 +323,7 @@ function startLiveShare() {
   }
   liveLinkSent = false;
   try {
+    liveMicStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }).catch(() => null);
     openLivePeer(liveShareId());
   } catch (e) {
     addLog(`No se pudo activar el video en vivo: ${e.message}`, 'alert');
@@ -317,6 +333,9 @@ function startLiveShare() {
 function stopLiveShare() {
   livePeer?.destroy();
   livePeer = null;
+  liveMicStream?.getTracks().forEach((t) => t.stop());
+  liveMicStream = null;
+  if (liveAudioEl) { liveAudioEl.remove(); liveAudioEl = null; }
 }
 
 document.addEventListener('visibilitychange', () => {

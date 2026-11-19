@@ -16,6 +16,12 @@
     .dot.live { background: #ef4444; animation: pulse 1.2s infinite; }
     @keyframes pulse { 50% { opacity: .4; } }
     p.hint { color: #9aa7ab; text-align: center; padding: 0 20px; }
+    .controles { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 14px; }
+    button { font: inherit; border: 0; border-radius: 10px; padding: 14px 20px; cursor: pointer; }
+    #sonidoBtn { background: #0f766e; color: #fff; }
+    #hablarBtn { background: #374151; color: #fff; width: 100%; max-width: 320px; font-size: 1.1rem; touch-action: none; user-select: none; }
+    #hablarBtn.activo { background: #ef4444; }
+    #hablarBtn[disabled] { opacity: 0.5; }
   </style>
 </head>
 <body>
@@ -27,18 +33,55 @@
     <video id="video" playsinline autoplay muted></video>
     <p id="hint" class="hint" hidden>Si no conecta, puede ser que el celular que vigila esté apagado, sin internet, o que la red de datos no permita la conexión directa (pasa con algunas compañías). Probá con Wi-Fi.</p>
   </div>
+  <div class="controles">
+    <button id="sonidoBtn">🔊 Activar sonido</button>
+    <button id="hablarBtn" disabled>🎤 Mantené apretado para hablar</button>
+  </div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
   <script>
     const video = document.getElementById('video');
     const status = document.getElementById('status');
     const dot = document.getElementById('dot');
     const hint = document.getElementById('hint');
+    const sonidoBtn = document.getElementById('sonidoBtn');
+    const hablarBtn = document.getElementById('hablarBtn');
     const remoteId = location.hash.slice(1);
 
     function setStatus(text, live) {
       status.textContent = text;
       dot.classList.toggle('live', !!live);
     }
+
+    sonidoBtn.addEventListener('click', () => {
+      video.muted = false;
+      video.play().catch(() => {});
+      sonidoBtn.textContent = '🔊 Sonido activado';
+    });
+
+    // Micrófono para hablar (push-to-talk): se pide una vez, antes de llamar,
+    // y el track se manda apagado salvo mientras se mantiene apretado el botón,
+    // para evitar el eco de tener los dos micrófonos abiertos todo el tiempo.
+    let micTrack = null;
+    const micReady = navigator.mediaDevices
+      ? navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } })
+          .then((micStream) => {
+            micTrack = micStream.getAudioTracks()[0];
+            micTrack.enabled = false;
+            hablarBtn.disabled = false;
+          })
+          .catch(() => { hablarBtn.textContent = '🎤 Sin micrófono disponible'; })
+      : Promise.resolve();
+    // No esperamos para siempre: si tarda o no hay micrófono, se llama igual (solo video).
+    const micOrTimeout = Promise.race([micReady, new Promise((r) => setTimeout(r, 4000))]);
+
+    function hablar(activo) {
+      if (micTrack) micTrack.enabled = activo;
+      hablarBtn.classList.toggle('activo', activo);
+    }
+    hablarBtn.addEventListener('pointerdown', () => hablar(true));
+    hablarBtn.addEventListener('pointerup', () => hablar(false));
+    hablarBtn.addEventListener('pointerleave', () => hablar(false));
+    hablarBtn.addEventListener('pointercancel', () => hablar(false));
 
     if (!remoteId) {
       setStatus('Falta el link completo (con el código después de #).');
@@ -47,17 +90,21 @@
       setStatus('Sin conexión a internet.');
       hint.hidden = false;
     } else {
-      // Stream vacío pero real (un canvas en blanco), más compatible que un MediaStream sin pistas.
+      // Stream para mandar: el audio del micrófono (si se consiguió) y, si no, un
+      // canvas en blanco, más compatible que un MediaStream sin pistas.
       const blankCanvas = document.createElement('canvas');
       blankCanvas.width = 2; blankCanvas.height = 2;
-      const emptyStream = blankCanvas.captureStream ? blankCanvas.captureStream(1) : new MediaStream();
+      function outgoingStream() {
+        if (micTrack) return new MediaStream([micTrack]);
+        return blankCanvas.captureStream ? blankCanvas.captureStream(1) : new MediaStream();
+      }
 
       let connected = false;
       let retryTimer = null;
 
       function tryCall(peer) {
         setStatus('Llamando…');
-        const call = peer.call(remoteId, emptyStream);
+        const call = peer.call(remoteId, outgoingStream());
         call.on('stream', (remoteStream) => {
           connected = true;
           clearTimeout(retryTimer);
@@ -78,7 +125,7 @@
       }
 
       const peer = new Peer();
-      peer.on('open', () => tryCall(peer));
+      peer.on('open', () => micOrTimeout.then(() => tryCall(peer)));
       peer.on('error', (err) => {
         if (err.type === 'peer-unavailable') { scheduleRetry(peer); return; }
         setStatus(`Error: ${err.type || err.message}`);
