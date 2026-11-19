@@ -4,7 +4,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'models');
+const dir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'docs', 'models');
 const base = 'https://storage.googleapis.com/mediapipe-models';
 const models = {
   'pose_landmarker_lite.task': `${base}/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task`,

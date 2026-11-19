@@ -26,7 +26,7 @@ const ALLOW_PUBLIC_CAMERAS = process.env.ALLOW_PUBLIC_CAMERAS === '1';
 // afuera de la red, esta clave protege esa vista. Sin ella, cualquiera con el link vería la cámara.
 const VIEW_PASSWORD = (process.env.VIEW_PASSWORD || '').trim();
 
-const PUBLIC_DIR = path.join(__dirname, 'public');
+const PUBLIC_DIR = path.join(__dirname, 'docs');
 const VENDOR_DIR = path.join(__dirname, 'node_modules', '@mediapipe', 'tasks-vision');
 
 const MIME = {

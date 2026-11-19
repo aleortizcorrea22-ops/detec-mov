@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { evaluateFrame, TouchTracker, P } from '../public/js/rules.js';
+import { evaluateFrame, TouchTracker, P } from '../docs/js/rules.js';
 
 const W = 1280;
 const H = 720;

@@ -117,7 +117,7 @@ npm run dev  # servidor que se reinicia al cambiar archivos
 ```
 
 - `server.js`: servidor HTTP sin dependencias. Sirve la app, envía a Telegram y hace de puente para las cámaras IP.
-- `public/js/rules.js`: la regla de detección y el control de repeticiones (probados en `test/`).
-- `public/js/app.js`: cámara, MediaPipe, dibujo del esqueleto y alertas.
-- `public/js/install.js`: botón Instalar.
-- `public/sw.js` y `public/manifest.webmanifest`: lo que hace la app instalable.
+- `docs/js/rules.js`: la regla de detección y el control de repeticiones (probados en `test/`).
+- `docs/js/app.js`: cámara, MediaPipe, dibujo del esqueleto y alertas.
+- `docs/js/install.js`: botón Instalar.
+- `docs/sw.js` y `docs/manifest.webmanifest`: lo que hace la app instalable.
