@@ -41,6 +41,7 @@
     <li><a href="#problemas">Problemas comunes</a></li>
     <li><a href="#limites">Límites a tener en cuenta</a></li>
     <li><a href="#links">Links importantes</a></li>
+    <li><a href="#notas">Mis datos (privado, solo en este navegador)</a></li>
   </ol>
 </nav>
 
@@ -129,6 +130,55 @@ DETEC MOV mira con una cámara a la persona y, cuando se detecta que una mano to
   <li>Repositorio: <a href="https://github.com/aleortizcorrea22-ops/detec-mov">github.com/aleortizcorrea22-ops/detec-mov</a> (rama <code>mvp-deteccion-cabeza</code>, PR #1)</li>
   <li>Carpeta en la PC: <code>C:\DETEC MOV</code> (<code>iniciar.bat</code> para arrancar, <code>detener.bat</code> para parar, <code>.env</code> con el token de Telegram)</li>
 </ul>
+
+<h2 id="notas">Mis datos (privado, solo en este navegador)</h2>
+<div class="nota">
+Lo que escribas acá abajo se guarda solo en la memoria de <b>este navegador, en esta PC</b> (localStorage). No se manda a ningún servidor ni se comparte con nadie, ni siquiera con el asistente. Es para tenerlo a mano sin tener que buscarlo en el <code>.env</code> cada vez. Si abrís este archivo en otra PC o navegador, lo vas a tener que escribir de nuevo ahí.
+</div>
+<p>
+  <label for="miToken"><b>Token del bot de Telegram</b></label><br>
+  <input id="miToken" type="password" autocomplete="off" placeholder="123456789:AA..." style="width:100%;max-width:420px;padding:8px;font:inherit;margin-top:4px;">
+  <button id="verToken" type="button" style="padding:8px 12px;margin-left:6px;cursor:pointer;">Mostrar</button>
+</p>
+<p>
+  <label for="miChat"><b>Chat ID del grupo</b></label><br>
+  <input id="miChat" type="text" autocomplete="off" placeholder="-1004313817541" style="width:100%;max-width:420px;padding:8px;font:inherit;margin-top:4px;">
+</p>
+<p>
+  <button id="guardarNotas" type="button" style="padding:9px 16px;background:#0f766e;color:#fff;border:0;border-radius:6px;cursor:pointer;font:inherit;">Guardar</button>
+  <span id="notasOk" class="ok" style="display:none;margin-left:10px;">Guardado ✓</span>
+</p>
+
+<script>
+(function () {
+  var KEY = 'detecmov.guia.notas';
+  var token = document.getElementById('miToken');
+  var chat = document.getElementById('miChat');
+  var verBtn = document.getElementById('verToken');
+  var okMsg = document.getElementById('notasOk');
+  try {
+    var saved = JSON.parse(localStorage.getItem(KEY) || '{}');
+    token.value = saved.token || '';
+    chat.value = saved.chat || '';
+  } catch (e) { /* sin datos guardados todavía */ }
+
+  verBtn.addEventListener('click', function () {
+    var show = token.type === 'password';
+    token.type = show ? 'text' : 'password';
+    verBtn.textContent = show ? 'Ocultar' : 'Mostrar';
+  });
+
+  document.getElementById('guardarNotas').addEventListener('click', function () {
+    try {
+      localStorage.setItem(KEY, JSON.stringify({ token: token.value.trim(), chat: chat.value.trim() }));
+      okMsg.style.display = '';
+      setTimeout(function () { okMsg.style.display = 'none'; }, 2500);
+    } catch (e) {
+      alert('No se pudo guardar en este navegador.');
+    }
+  });
+})();
+</script>
 
 <footer>Generado automáticamente a partir de los cambios hechos en el proyecto.</footer>
 </body>
