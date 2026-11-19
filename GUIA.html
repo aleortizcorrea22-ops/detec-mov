@@ -33,6 +33,7 @@
   <ol>
     <li><a href="#que-es">Qué es</a></li>
     <li><a href="#modos">Los dos modos</a></li>
+    <li><a href="#telegram-bot">Crear el bot y el grupo de Telegram</a></li>
     <li><a href="#celular-solo">Modo celular solo (recomendado, sin PC)</a></li>
     <li><a href="#con-pc">Modo con PC / servidor</a></li>
     <li><a href="#camara">Elegir cámara (trasera / delantera)</a></li>
@@ -61,6 +62,46 @@ DETEC MOV mira con una cámara a la persona y, cuando se detecta que una mano to
   <tr><td>Ver en vivo desde otro aparato</td><td>Sí, celular a celular (WebRTC)</td><td>Sí, con <code>live.html</code> + cloudflared</td></tr>
 </table>
 <div class="nota">Si usás los dos al mismo tiempo (PC vigilando y celular vigilando), van a llegar <b>alertas duplicadas</b>. Dejá uno solo prendido.</div>
+
+<h2 id="telegram-bot">Crear el bot y el grupo de Telegram</h2>
+<p>Esto se hace <b>una sola vez</b>. Después, el token y el chat_id que obtengas acá son los que vas a usar en todos los celulares/PCs que configures.</p>
+
+<h3>1. Crear el bot con @BotFather</h3>
+<ol>
+  <li>Abrí Telegram y buscá el usuario <code>@BotFather</code> (el bot oficial de Telegram para crear bots, tiene una tilde azul).</li>
+  <li>Escribile <code>/newbot</code>.</li>
+  <li>Te va a pedir un <b>nombre</b> para el bot (lo que se ve, puede tener espacios, por ejemplo "Meme Avisos"). Escribilo y enviá.</li>
+  <li>Te va a pedir un <b>usuario</b> para el bot: tiene que terminar en <code>bot</code> y no puede tener espacios (por ejemplo <code>MemeAvisosBot</code>). Si ya está usado, probá otro.</li>
+  <li>Te va a responder con un mensaje que incluye el <b>token</b>, algo como <code>123456789:AAH...</code> (un número, dos puntos, y letras/números después). Ese token es la "contraseña" del bot: guardalo, es lo que vas a pegar en la app y en el panel de la guía (sección "Mis datos" más abajo).</li>
+</ol>
+
+<h3>2. Crear el grupo de Telegram</h3>
+<ol>
+  <li>En Telegram, tocá el botón de escribir/nuevo (el lápiz o el "+") y elegí <b>"Nuevo grupo"</b>.</li>
+  <li>Agregá al menos a una persona (puede ser vos mismo desde otro contacto, o quien vaya a recibir las alertas) y poné un nombre al grupo (por ejemplo "Avisos DETEC MOV").</li>
+  <li>Creá el grupo.</li>
+</ol>
+
+<h3>3. Agregar el bot al grupo</h3>
+<ol>
+  <li>Entrá al grupo, tocá el nombre del grupo arriba (o los tres puntitos) y buscá la opción <b>"Agregar miembro"</b> / <b>"Add member"</b>.</li>
+  <li>Buscá el usuario del bot que creaste (por ejemplo <code>@MemeAvisosBot</code>) y agregalo.</li>
+  <li>Telegram puede avisar que el bot "no tiene acceso a los mensajes del grupo": es normal, el bot igual puede <i>enviar</i> mensajes al grupo; ese aviso es sobre si puede <i>leer</i> todos los mensajes, que no hace falta para esto.</li>
+  <li>Escribí cualquier cosa en el grupo (por ejemplo "hola"), para que Telegram registre que el bot tiene actividad ahí.</li>
+</ol>
+
+<h3>4. Obtener el chat_id del grupo</h3>
+<p>El chat_id es el número que identifica a ese grupo (no es el nombre). Para conseguirlo:</p>
+<ol>
+  <li>Abrí la app DETEC MOV (o <code>GUIA.html</code> no sirve para esto, tiene que ser la app) con el token ya cargado.</li>
+  <li>Tocá <b>"Buscar mi chat_id"</b>. Va a aparecer una lista con los chats donde el bot tiene actividad reciente: buscá el que tenga el nombre de tu grupo.</li>
+  <li>El número de un grupo normal es negativo (por ejemplo <code>-123456789</code>); si el grupo es grande o se convirtió en "supergrupo", el número puede ser más largo y empezar con <code>-100</code> (por ejemplo <code>-1004313817541</code>). Copiá el número completo, con el signo menos.</li>
+  <li>Pegá ese número en el campo "Chat ID" de la app, junto al token, y tocá Guardar.</li>
+</ol>
+<div class="nota">Si el grupo se convierte más adelante en "supergrupo" (pasa solo, cuando crece o se le activan ciertas funciones), el chat_id <b>cambia</b>. Si las alertas dejan de llegar y antes andaban, repetí el paso 4 para conseguir el chat_id nuevo.</div>
+
+<h3>5. Probar</h3>
+<p>Con el token y el chat_id ya guardados en la app, tocá <b>"Enviar alerta de prueba"</b>. Si el mensaje llega al grupo, quedó todo configurado. Para avisos a varios grupos o personas, se pueden poner varios chat_id separados por coma en ese mismo campo.</p>
 
 <h2 id="celular-solo">Modo celular solo (recomendado, sin PC)</h2>
 <ol>
