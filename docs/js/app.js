@@ -281,6 +281,7 @@ let livePeer = null;
 let liveLinkSent = false;
 let liveMicStream = null;
 let liveAudioEl = null;
+let activeCalls = [];
 
 function liveShareId() {
   let id = localStorage.getItem('detecmov.live.id');
@@ -305,6 +306,9 @@ function openLivePeer(id) {
     }
   });
   livePeer.on('call', async (call) => {
+    activeCalls.forEach((c) => c.close());
+    activeCalls.push(call);
+    call.on('close', () => { activeCalls = activeCalls.filter((c) => c !== call); });
     let tracks = [...stream.getVideoTracks()];
     if (liveMicStream) {
       const micTrack = liveMicStream.getAudioTracks()[0];
@@ -326,7 +330,10 @@ function openLivePeer(id) {
     if (settings.liveWebrtc) setTimeout(() => livePeer?.reconnect(), 2000);
   });
   livePeer.on('error', (err) => {
-    if (err.type === 'unavailable-id') {
+    if (err.type === 'peer-unavailable') {
+      // Pasa cuando quien miraba se fue o cerró la página; no afecta la vigilancia.
+      console.warn('Video en vivo:', err.type);
+    } else if (err.type === 'unavailable-id') {
       // Quedó registrado de una sesión anterior (se va a liberar solo). Reintentamos.
       setTimeout(() => { if (settings.liveWebrtc) openLivePeer(id); }, 5000);
     } else {
@@ -359,6 +366,7 @@ function applyLiveMute() {
 function stopLiveShare() {
   livePeer?.destroy();
   livePeer = null;
+  activeCalls = [];
   liveMicStream?.getTracks().forEach((t) => t.stop());
   liveMicStream = null;
   if (liveAudioEl) { liveAudioEl.remove(); liveAudioEl = null; }

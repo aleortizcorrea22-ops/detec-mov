@@ -102,10 +102,13 @@
 
       let connected = false;
       let retryTimer = null;
+      let currentCall = null;
 
       function tryCall(peer) {
+        currentCall?.close();
         setStatus('Llamando…');
         const call = peer.call(remoteId, outgoingStream());
+        currentCall = call;
         call.on('stream', (remoteStream) => {
           connected = true;
           clearTimeout(retryTimer);
