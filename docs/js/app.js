@@ -10,7 +10,7 @@ const els = {
   urlField: $('urlField'), cameraUrl: $('cameraUrl'), startBtn: $('startBtn'), stopBtn: $('stopBtn'),
   sensitivity: $('sensitivity'), sensVal: $('sensVal'), holdMs: $('holdMs'), holdVal: $('holdVal'),
   cooldownS: $('cooldownS'), coolVal: $('coolVal'), model: $('model'), includeFace: $('includeFace'), useHands: $('useHands'),
-  sendPhoto: $('sendPhoto'), beep: $('beep'), drawSkeleton: $('drawSkeleton'), mirror: $('mirror'), viewer: $('viewer'), shareLive: $('shareLive'), liveWebrtc: $('liveWebrtc'),
+  sendPhoto: $('sendPhoto'), beep: $('beep'), drawSkeleton: $('drawSkeleton'), mirror: $('mirror'), viewer: $('viewer'), shareLive: $('shareLive'), liveWebrtc: $('liveWebrtc'), liveMuteBtn: $('liveMuteBtn'),
   tgStatus: $('tgStatus'), testBtn: $('testBtn'), findChatBtn: $('findChatBtn'), chatList: $('chatList'), log: $('log'),
   directTelegramFields: $('directTelegramFields'), directToken: $('directToken'), directChatIds: $('directChatIds'), saveDirectBtn: $('saveDirectBtn'),
 };
@@ -20,7 +20,7 @@ const els = {
 
 const DEFAULTS = {
   sourceType: 'device', deviceId: '', cameraUrl: '', sensitivity: 1, holdMs: 600, cooldownS: 30,
-  model: 'full', includeFace: false, useHands: true, sendPhoto: true, beep: true, drawSkeleton: true, mirror: false, shareLive: false, liveWebrtc: false,
+  model: 'full', includeFace: false, useHands: true, sendPhoto: true, beep: true, drawSkeleton: true, mirror: false, shareLive: false, liveWebrtc: false, liveMuted: false,
 };
 const settings = { ...DEFAULTS, ...readSettings() };
 
@@ -50,6 +50,8 @@ function bindSettings() {
     tracker.holdMs = settings.holdMs;
     tracker.cooldownMs = settings.cooldownS * 1000;
     els.viewer.classList.toggle('mirrored', settings.mirror);
+    els.liveMuteBtn.hidden = !settings.liveWebrtc;
+    els.liveMuteBtn.textContent = settings.liveMuted ? '🔊 Activar micrófono y sonido' : '🔇 Silenciar micrófono y sonido';
   };
   const on = (el, key, parse = (v) => v) => el.addEventListener('input', () => {
     settings[key] = parse(el.type === 'checkbox' ? el.checked : el.value);
@@ -69,6 +71,20 @@ function bindSettings() {
   on(els.mirror, 'mirror');
   on(els.shareLive, 'shareLive');
   on(els.liveWebrtc, 'liveWebrtc');
+  els.liveMuteBtn.addEventListener('click', () => {
+    if (!settings.liveMuted) {
+      if (!confirm('¿Seguro que querés silenciar el micrófono y el sonido? Quien mire en vivo no va a escuchar ni va a poder hablar.')) return;
+      if (!confirm('¿Está realmente seguro? Tocá Aceptar para silenciar.')) return;
+      settings.liveMuted = true;
+      addLog('Micrófono y sonido del video en vivo silenciados', 'alert');
+    } else {
+      settings.liveMuted = false;
+      addLog('Micrófono y sonido del video en vivo reactivados');
+    }
+    saveSettings();
+    applyLiveMute();
+    refresh();
+  });
   els.deviceSelect.addEventListener('change', async () => {
     settings.deviceId = els.deviceSelect.value;
     saveSettings();
@@ -290,7 +306,10 @@ function openLivePeer(id) {
   });
   livePeer.on('call', async (call) => {
     let tracks = [...stream.getVideoTracks()];
-    if (liveMicStream) tracks.push(...liveMicStream.getAudioTracks());
+    if (liveMicStream) {
+      const micTrack = liveMicStream.getAudioTracks()[0];
+      if (micTrack) { micTrack.enabled = !settings.liveMuted; tracks.push(micTrack); }
+    }
     call.answer(new MediaStream(tracks));
     call.on('stream', (remoteStream) => {
       // Lo que diga quien mira, para que lo escuche la persona.
@@ -300,6 +319,7 @@ function openLivePeer(id) {
         document.body.appendChild(liveAudioEl);
       }
       liveAudioEl.srcObject = remoteStream;
+      liveAudioEl.muted = !!settings.liveMuted;
     });
   });
   livePeer.on('disconnected', () => {
@@ -328,6 +348,12 @@ async function startLiveShare() {
   } catch (e) {
     addLog(`No se pudo activar el video en vivo: ${e.message}`, 'alert');
   }
+}
+
+function applyLiveMute() {
+  const micTrack = liveMicStream?.getAudioTracks()[0];
+  if (micTrack) micTrack.enabled = !settings.liveMuted;
+  if (liveAudioEl) liveAudioEl.muted = !!settings.liveMuted;
 }
 
 function stopLiveShare() {
