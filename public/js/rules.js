@@ -70,8 +70,10 @@ export function headZone(pose, w, h, sensitivity = 1) {
 /** Puntos de las manos que da el modelo de pose (muñeca, meñique, índice, pulgar). */
 export function poseHandPoints(pose, w, h) {
   const sides = [
-    { side: 'izquierda', idx: [P.L_WRIST, P.L_PINKY, P.L_INDEX, P.L_THUMB] },
-    { side: 'derecha', idx: [P.R_WRIST, P.R_PINKY, P.R_INDEX, P.R_THUMB] },
+    // La cámara no está en espejo: lo que para la cámara es la izquierda/derecha de la persona
+    // es al revés de lo que ella misma siente, por eso se informa invertido.
+    { side: 'derecha', idx: [P.L_WRIST, P.L_PINKY, P.L_INDEX, P.L_THUMB] },
+    { side: 'izquierda', idx: [P.R_WRIST, P.R_PINKY, P.R_INDEX, P.R_THUMB] },
   ];
   return sides.map(({ side, idx }) => ({ side, points: idx.map((i) => pose[i]).filter(visible).map((l) => px(l, w, h)) }));
 }

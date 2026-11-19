@@ -26,7 +26,7 @@ for (const scale of [1, 0.5, 0.2]) {
   test(`mano en la parte de arriba de la cabeza → detecta (escala ${scale})`, () => {
     const r = evaluateFrame(person({ scale, hand: [30, -40] }), [], W, H);
     assert.equal(r.touching, true);
-    assert.equal(r.side, 'derecha');
+    assert.equal(r.side, 'izquierda');
   });
 
   test(`mano al costado de la cabeza (rascando sobre la oreja) → detecta (escala ${scale})`, () => {

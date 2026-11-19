@@ -18,7 +18,7 @@ const els = {
 
 const DEFAULTS = {
   sourceType: 'device', deviceId: '', cameraUrl: '', sensitivity: 1, holdMs: 600, cooldownS: 30,
-  model: 'full', includeFace: false, useHands: true, sendPhoto: true, beep: true, drawSkeleton: true, mirror: true,
+  model: 'full', includeFace: false, useHands: true, sendPhoto: true, beep: true, drawSkeleton: true, mirror: false,
 };
 const settings = { ...DEFAULTS, ...readSettings() };
 
