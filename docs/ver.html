@@ -90,13 +90,14 @@
       setStatus('Sin conexión a internet.');
       hint.hidden = false;
     } else {
-      // Stream para mandar: el audio del micrófono (si se consiguió) y, si no, un
-      // canvas en blanco, más compatible que un MediaStream sin pistas.
+      // Stream para mandar: un video en blanco (para que la llamada reserve lugar
+      // para recibir el video del que vigila) más el audio del micrófono si se consiguió.
       const blankCanvas = document.createElement('canvas');
       blankCanvas.width = 2; blankCanvas.height = 2;
       function outgoingStream() {
-        if (micTrack) return new MediaStream([micTrack]);
-        return blankCanvas.captureStream ? blankCanvas.captureStream(1) : new MediaStream();
+        const blank = blankCanvas.captureStream ? blankCanvas.captureStream(1) : new MediaStream();
+        if (micTrack) blank.addTrack(micTrack);
+        return blank;
       }
 
       let connected = false;
