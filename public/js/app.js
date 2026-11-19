@@ -1,5 +1,6 @@
 import { evaluateFrame, TouchTracker, P } from './rules.js';
 import { setupInstallButton } from './install.js';
+import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -11,6 +12,7 @@ const els = {
   cooldownS: $('cooldownS'), coolVal: $('coolVal'), model: $('model'), includeFace: $('includeFace'), useHands: $('useHands'),
   sendPhoto: $('sendPhoto'), beep: $('beep'), drawSkeleton: $('drawSkeleton'), mirror: $('mirror'), viewer: $('viewer'), shareLive: $('shareLive'),
   tgStatus: $('tgStatus'), testBtn: $('testBtn'), findChatBtn: $('findChatBtn'), chatList: $('chatList'), log: $('log'),
+  directTelegramFields: $('directTelegramFields'), directToken: $('directToken'), directChatIds: $('directChatIds'), saveDirectBtn: $('saveDirectBtn'),
 };
 
 // ---------------------------------------------------------------------------
@@ -100,16 +102,22 @@ async function createWithFallback(Klass, options) {
 }
 
 let localModels = false;
+const MEDIAPIPE_CDN = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35';
 
 function modelUrl(key) {
   if (!localModels) return MODEL_URLS[key];
-  return `/models/${MODEL_URLS[key].split('/').pop()}`;
+  return `models/${MODEL_URLS[key].split('/').pop()}`;
 }
 
 async function loadModels() {
   setStatus('warn', 'Cargando modelos de detección…');
-  mp ??= await import('/vendor/mediapipe/vision_bundle.mjs');
-  vision ??= await mp.FilesetResolver.forVisionTasks('/vendor/mediapipe/wasm');
+  if (hasBackend === null) await detectBackend();
+  // Con servidor propio (server.js), la librería se sirve local (anda sin internet
+  // después de la primera vez). Sin servidor (por ejemplo instalada desde GitHub
+  // Pages), se trae de un CDN público.
+  const vendorBase = hasBackend ? 'vendor/mediapipe' : MEDIAPIPE_CDN;
+  mp ??= await import(`${vendorBase}/vision_bundle.mjs`);
+  vision ??= await mp.FilesetResolver.forVisionTasks(`${vendorBase}/wasm`);
   if (!poseLandmarker) {
     poseLandmarker = await createWithFallback(mp.PoseLandmarker, {
       baseOptions: { modelAssetPath: modelUrl(MODEL_URLS[settings.model] ? settings.model : 'full') },
@@ -444,13 +452,7 @@ async function onTouchAlert(res, w, h, source) {
     }
   }
   try {
-    const r = await fetch('/api/alert', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, image }),
-    });
-    const data = await r.json();
-    if (!data.ok) throw new Error(data.error);
+    await sendAlert({ text, imageDataUrl: image });
     addLog('Alerta enviada por Telegram');
   } catch (e) {
     addLog(`No se pudo enviar a Telegram: ${e.message}`, 'alert');
@@ -488,30 +490,69 @@ function setStatus(kind, text) {
 // ---------------------------------------------------------------------------
 // Telegram (estado y ayudas)
 
-async function refreshTelegramStatus() {
+// Si hay un servidor propio (server.js) detrás de la app, se usa ese (el token queda
+// ahí, nunca en el navegador). Si no (por ejemplo la app instalada desde GitHub Pages,
+// sin ningún servidor propio), se manda directo desde el dispositivo: ver telegram-direct.js.
+let hasBackend = null;
+
+async function detectBackend() {
   try {
-    const s = await (await fetch('/api/status')).json();
+    const r = await fetch('/api/status', { cache: 'no-store' });
+    if (!r.ok) throw new Error();
+    hasBackend = true;
+    return await r.json();
+  } catch {
+    hasBackend = false;
+    return null;
+  }
+}
+
+async function refreshTelegramStatus() {
+  const s = await detectBackend();
+  els.directTelegramFields.hidden = hasBackend;
+  if (hasBackend) {
     localModels = Boolean(s.localModels);
     els.tgStatus.textContent = s.telegram
       ? `Configurado: las alertas se envían a ${s.chats} chat(s).`
       : s.hasToken
         ? 'Falta TELEGRAM_CHAT_ID. Escríbele algo a tu bot y presiona "Buscar mi chat_id".'
         : 'Sin configurar. Completa TELEGRAM_BOT_TOKEN y TELEGRAM_CHAT_ID en el archivo .env del servidor.';
-  } catch {
-    els.tgStatus.textContent = 'No se pudo contactar al servidor.';
+    return;
   }
+  // Modo directo (sin servidor): mostrar/precargar los campos de token y chat_id.
+  const direct = loadDirectConfig();
+  els.directToken.value = direct.token;
+  els.directChatIds.value = direct.chatIds.join(',');
+  els.tgStatus.textContent = direct.token && direct.chatIds.length
+    ? `Configurado en este dispositivo: las alertas se mandan directo a ${direct.chatIds.length} chat(s), sin servidor.`
+    : 'No hay ningún servidor detrás de esta app: cargá el token del bot y el chat_id acá abajo para que las alertas salgan directo desde este dispositivo.';
+}
+
+els.saveDirectBtn.addEventListener('click', () => {
+  saveDirectConfig({ token: els.directToken.value, chatIds: els.directChatIds.value });
+  addLog('Datos de Telegram guardados en este dispositivo');
+  refreshTelegramStatus();
+});
+
+async function sendAlert({ text, imageDataUrl }) {
+  if (hasBackend) {
+    const r = await fetch('/api/alert', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, image: imageDataUrl }),
+    });
+    const data = await r.json();
+    if (!data.ok) throw new Error(data.error);
+    return data.sent;
+  }
+  return sendDirectAlert({ text, imageDataUrl });
 }
 
 els.testBtn.addEventListener('click', async () => {
   els.testBtn.disabled = true;
   try {
-    const r = await fetch('/api/alert', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: `✅ Prueba de DETEC MOV\n🕒 ${new Date().toLocaleString()}` }),
-    });
-    const data = await r.json();
-    addLog(data.ok ? 'Prueba enviada a Telegram' : `Error en la prueba: ${data.error}`, data.ok ? '' : 'alert');
+    await sendAlert({ text: `✅ Prueba de DETEC MOV\n🕒 ${new Date().toLocaleString()}` });
+    addLog('Prueba enviada a Telegram');
   } catch (e) {
     addLog(`Error en la prueba: ${e.message}`, 'alert');
   } finally {
@@ -523,10 +564,11 @@ els.findChatBtn.addEventListener('click', async () => {
   els.chatList.hidden = false;
   els.chatList.textContent = 'Buscando…';
   try {
-    const data = await (await fetch('/api/telegram/chats')).json();
-    if (data.error) throw new Error(data.error);
-    els.chatList.textContent = data.chats.length
-      ? data.chats.map((c) => `${c.id}  ${c.name || ''} (${c.type})`).join('\n') + '\n\nCopia el número en TELEGRAM_CHAT_ID del .env y reinicia el servidor.'
+    const chats = hasBackend ? (await (await fetch('/api/telegram/chats')).json()).chats : await findDirectChats();
+    els.chatList.textContent = chats.length
+      ? chats.map((c) => `${c.id}  ${c.name || ''} (${c.type})`).join('\n') + (hasBackend
+        ? '\n\nCopia el número en TELEGRAM_CHAT_ID del .env y reinicia el servidor.'
+        : '\n\nCopiá el número en "Chat ID(s)" de acá arriba y tocá Guardar.')
       : 'No hay mensajes. Abre tu bot en Telegram, envíale "hola" y vuelve a intentar.';
   } catch (e) {
     els.chatList.textContent = `Error: ${e.message}`;

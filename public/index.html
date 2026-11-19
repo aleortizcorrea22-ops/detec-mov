@@ -97,6 +97,18 @@
 
       <h2>Telegram</h2>
       <p id="tgStatus" class="muted">Comprobando…</p>
+      <div id="directTelegramFields" hidden>
+        <label class="field">
+          <span>Token del bot (@BotFather)</span>
+          <input id="directToken" type="password" autocomplete="off" placeholder="123456789:AA...">
+        </label>
+        <label class="field">
+          <span>Chat ID(s) (separados por coma)</span>
+          <input id="directChatIds" type="text" autocomplete="off" placeholder="6500515383">
+        </label>
+        <button id="saveDirectBtn" class="btn">Guardar</button>
+        <small class="muted">Queda guardado solo en este aparato, no se manda a ningún servidor.</small>
+      </div>
       <div class="row">
         <button id="testBtn" class="btn">Enviar alerta de prueba</button>
         <button id="findChatBtn" class="btn">Buscar mi chat_id</button>
