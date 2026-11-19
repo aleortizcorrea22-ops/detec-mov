@@ -7,7 +7,7 @@
 const VERSION = 'detecmov-v1';
 const BASE = new URL('.', self.location.href); // ej.: https://host/ o https://host/detec-mov/
 const SHELL = [
-  './', 'index.html', 'ver.html', 'styles.css', 'manifest.webmanifest',
+  './', 'index.html', 'ver.html', 'manual.html', 'styles.css', 'manifest.webmanifest',
   'js/app.js', 'js/rules.js', 'js/install.js', 'js/telegram-direct.js',
   'icons/icon-192.png', 'icons/icon-512.png',
 ].map((p) => new URL(p, BASE).href);

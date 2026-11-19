@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Manual — DETEC MOV</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body { font: 19px/1.6 system-ui, sans-serif; max-width: 680px; margin: 0 auto; padding: 18px 16px 90px; color: #1b1f22; background: #fdfdfb; }
+  h1 { font-size: 1.5rem; color: #0f766e; margin-bottom: 2px; }
+  h2 { font-size: 1.25rem; color: #0f766e; margin-top: 2em; border-top: 3px solid #e5e5e0; padding-top: 18px; }
+  .intro { background: #f0f7f6; border-radius: 12px; padding: 14px 16px; margin: 16px 0; }
+  .paso { background: #fff; border: 2px solid #e5e5e0; border-radius: 14px; padding: 16px 18px; margin: 14px 0; }
+  .paso b.num { display: inline-block; background: #0f766e; color: #fff; width: 30px; height: 30px; border-radius: 50%; text-align: center; line-height: 30px; margin-right: 8px; font-size: 1rem; }
+  .celu { display: inline-block; font-weight: 700; padding: 3px 10px; border-radius: 8px; margin-bottom: 8px; }
+  .celu1 { background: #dbeafe; color: #1e3a8a; }
+  .celu2 { background: #fde68a; color: #7c4a03; }
+  .ojo { background: #fff7ed; border-left: 5px solid #f59e0b; padding: 10px 14px; border-radius: 8px; margin: 10px 0; font-size: 0.95em; }
+  .caja { background: #111827; color: #d1fae5; padding: 14px; border-radius: 10px; font: 1.05em/1.4 monospace; word-break: break-all; margin: 10px 0; }
+  .btn { display: inline-block; background: #0f766e; color: #fff; border: 0; border-radius: 8px; padding: 10px 16px; font: inherit; font-weight: 600; cursor: pointer; text-decoration: none; }
+  .btn:active { opacity: 0.85; }
+  .falta { color: #b91c1c; font-weight: 600; }
+  .panel-alejandro { background: #fff3cd; border: 2px dashed #c08a00; border-radius: 12px; padding: 16px; margin: 20px 0; }
+  .panel-alejandro input { width: 100%; max-width: 420px; padding: 9px; font: inherit; margin: 6px 0 12px; display: block; }
+  footer { margin-top: 3em; color: #999; font-size: 0.85em; text-align: center; }
+</style>
+</head>
+<body>
+
+<h1>Cómo usar DETEC MOV</h1>
+<p class="intro">
+Esta hoja te explica, paso a paso, cómo poner en funcionamiento un sistema que avisa por Telegram cuando la persona se toca la cabeza. No necesitás saber nada de computadoras ni de celulares: seguí los pasos en orden, de arriba hacia abajo.
+</p>
+
+<div class="panel-alejandro" id="panelAlejandro">
+  <h2 style="margin-top:0;border-top:0;padding-top:0;">Para quien prepara esto (no para la persona que lo va a usar)</h2>
+  <p>Completá estos dos datos y tocá "Preparar y descargar". Se va a generar un archivo nuevo, ya con los datos puestos, listo para enviar por WhatsApp o Telegram a la persona. Esta parte de arriba no va a aparecer en ese archivo nuevo.</p>
+  <label><b>Token del bot de Telegram</b></label>
+  <input id="inToken" type="text" placeholder="123456789:AA...">
+  <label><b>Chat ID del grupo</b></label>
+  <input id="inChat" type="text" placeholder="-1004313817541">
+  <button class="btn" onclick="prepararManual()">Preparar y descargar</button>
+  <p id="avisoPrep" style="display:none;color:#166534;font-weight:600;margin-top:10px;">Listo, se descargó el archivo. Mandáselo a la persona (por WhatsApp, Telegram o como prefieras).</p>
+</div>
+
+<h2>Qué vas a necesitar</h2>
+<div class="paso">
+  <p><b>Dos celulares</b>, cualquiera, con internet (datos móviles o wifi):</p>
+  <p><span class="celu celu1">Celular 1</span> — se queda apoyado, mirando a la persona. Avisa cuando se toca la cabeza.</p>
+  <p><span class="celu celu2">Celular 2</span> — es el que vos (o quien cuida a la persona) usa para ver, cuando quiera, lo que está viendo el Celular 1.</p>
+  <p>En los dos celulares tiene que estar instalado <b>Telegram</b> (la aplicación de mensajes) y tener acceso al grupo donde van a llegar los avisos.</p>
+</div>
+
+<h2>Preparar el Celular 1 (el que vigila)</h2>
+
+<div class="paso">
+  <p><b class="num">1</b><b>Abrir el navegador de internet.</b></p>
+  <p>En la pantalla del celular buscá el ícono para entrar a internet. En la mayoría de los celulares es un círculo de colores (se llama <i>Chrome</i>) o, si es un iPhone, una brújula (se llama <i>Safari</i>).</p>
+</div>
+
+<div class="paso">
+  <p><b class="num">2</b><b>Escribir esta dirección y entrar:</b></p>
+  <div class="caja">aleortizcorrea22-ops.github.io/detec-mov</div>
+  <p>Tocá donde dice la dirección de internet (arriba de la pantalla), escribí eso y después tocá la flecha o "Ir".</p>
+</div>
+
+<div class="paso">
+  <p><b class="num">3</b><b>Instalar la aplicación en la pantalla del celular.</b></p>
+  <p><u>Si es un celular Android</u> (la mayoría de las marcas, menos iPhone): va a aparecer un botón que dice <b>Instalar</b> arriba de la página. Tocalo. Si no aparece, tocá los tres puntitos (⋮) de arriba a la derecha y elegí "Instalar aplicación" o "Agregar a pantalla principal".</p>
+  <p><u>Si es un iPhone</u>: abajo o arriba de la pantalla hay un botón con un cuadrado y una flecha hacia arriba (se llama "Compartir"). Tocalo, y en la lista que aparece buscá y tocá "Agregar a pantalla de inicio".</p>
+  <p>Ahora va a aparecer un ícono nuevo en la pantalla del celular, como el de cualquier otra aplicación. De ahora en más, abrí siempre la aplicación tocando ese ícono.</p>
+</div>
+
+<div class="paso">
+  <p><b class="num">4</b><b>Cargar el código para que avise por Telegram.</b></p>
+  <p>Abrí la aplicación (tocando el ícono nuevo). Un poco más abajo en la pantalla vas a ver la palabra <b>Telegram</b>, y debajo dos casilleros para escribir.</p>
+  <p>En el primer casillero ("Token del bot") escribí o pegá esto:</p>
+  <div class="caja" id="tokenFinal"><span class="falta">(Todavía no tiene el código. Quien te mandó este manual tiene que completarlo antes de enviártelo.)</span></div>
+  <p>En el segundo casillero ("Chat ID") escribí o pegá esto:</p>
+  <div class="caja" id="chatFinal"><span class="falta">(Todavía no tiene el código. Quien te mandó este manual tiene que completarlo antes de enviártelo.)</span></div>
+  <p>Para pegarlo: apretá el dedo unos segundos sobre lo que está escrito arriba, hasta que aparezca la palabra "Copiar", tocá "Copiar". Después tocá adentro del casillero de la aplicación, apretá el dedo unos segundos ahí también, y tocá "Pegar".</p>
+  <p>Cuando termines de escribir los dos, tocá el botón <b>Guardar</b> que está debajo de esos casilleros.</p>
+</div>
+
+<div class="paso">
+  <p><b class="num">5</b><b>Probar que funciona.</b></p>
+  <p>Tocá el botón que dice <b>"Enviar alerta de prueba"</b>. Fijate en Telegram, en el grupo, si llegó un mensaje de prueba. Si llegó, está todo bien y podés seguir. Si no llegó, avisale a quien te mandó este manual.</p>
+</div>
+
+<div class="paso">
+  <p><b class="num">6</b><b>Empezar a vigilar.</b></p>
+  <p>Tocá el botón <b>Iniciar</b>. El celular va a pedir permiso para usar la cámara: tocá <b>Permitir</b>.</p>
+  <p>Vas a ver la imagen de la cámara en la pantalla. Apoyá el celular de manera que se vea a la persona desde la cintura hacia arriba, con la cabeza completa, ni muy cerca ni muy lejos.</p>
+</div>
+
+<div class="paso">
+  <p><b class="num">7</b><b>Dejarlo funcionando.</b></p>
+  <p>Conectá el celular al cargador y dejalo enchufado.</p>
+  <p>Dejá la aplicación abierta, con la pantalla prendida. Si el celular se bloquea solo (la pantalla se pone negra) o se abre otra aplicación, el Celular 1 deja de vigilar.</p>
+  <p>Para que la pantalla no se apague sola: entrá a los <b>Ajustes</b> del celular (el ícono con forma de rueda o tuerquita), buscá donde dice <b>Pantalla</b>, y adentro buscá <b>"Tiempo de espera de pantalla"</b> o <b>"Suspender pantalla"</b>. Elegí la opción más larga que haya (por ejemplo "30 minutos" o "Nunca").</p>
+</div>
+
+<h2>Usar el Celular 2 (para ver en vivo cuando quieras)</h2>
+
+<div class="paso">
+  <p><b class="num">8</b><b>Esperar el link en Telegram.</b></p>
+  <p>Cuando el Celular 1 empieza a vigilar (paso 6), manda solo, de forma automática, un mensaje al grupo de Telegram que dice algo así: <i>"🔴 Ver esta cámara en vivo"</i>, seguido de una dirección de internet larga.</p>
+</div>
+
+<div class="paso">
+  <p><b class="num">9</b><b>Abrir ese mensaje desde el Celular 2.</b></p>
+  <p>Abrí Telegram en el Celular 2, entrá al grupo, buscá ese mensaje y tocá sobre la dirección de internet (va a estar subrayada o de otro color, como un link).</p>
+  <p>Se va a abrir el navegador de internet solo. Esperá unos segundos: arriba va a decir "Conectando…", después "Llamando…", y cuando esté lista va a decir <b>"En vivo"</b> con un punto rojo, y vas a ver la imagen de lo que está mirando el Celular 1.</p>
+</div>
+
+<div class="paso">
+  <p><b class="num">10</b><b>Si no conecta.</b></p>
+  <p>Fijate que el Celular 1 esté prendido, con la aplicación abierta y vigilando (no bloqueado). Si el Celular 2 está usando datos móviles y no conecta, probá conectarlo a una red de wifi.</p>
+  <p>Si usaste un mensaje viejo, buscá en el grupo el <b>último</b> mensaje de "Ver esta cámara en vivo" y usá ese.</p>
+</div>
+
+<h2>Cosas importantes para recordar</h2>
+<div class="ojo">
+  <p>• El Celular 1 tiene que quedar siempre <b>enchufado al cargador</b>, con la <b>pantalla prendida</b> y la aplicación <b>abierta</b>. Si se bloquea, deja de avisar.</p>
+  <p>• No hace falta tocar nada en el Celular 1 para que avise: una vez que tocaste Iniciar (paso 6), queda vigilando solo.</p>
+  <p>• Para dejar de vigilar, abrí la aplicación en el Celular 1 y tocá el botón <b>Detener</b>.</p>
+  <p>• Si algo no funciona o tenés dudas, avisale a la persona que te preparó este manual; ella puede ayudarte desde donde esté.</p>
+</div>
+
+<footer>DETEC MOV</footer>
+
+<script>
+function prepararManual() {
+  var token = document.getElementById('inToken').value.trim();
+  var chat = document.getElementById('inChat').value.trim();
+  if (!token || !chat) {
+    alert('Completá los dos datos antes de preparar el archivo.');
+    return;
+  }
+  // Clonamos la página entera, le sacamos el panel de edición y metemos los datos ya puestos.
+  var clone = document.documentElement.cloneNode(true);
+  var panel = clone.querySelector('#panelAlejandro');
+  if (panel) panel.remove();
+  var t = clone.querySelector('#tokenFinal');
+  if (t) t.textContent = token;
+  var c = clone.querySelector('#chatFinal');
+  if (c) c.textContent = chat;
+  // sacamos el script de preparación para que el archivo final sea solo lectura
+  var scripts = clone.querySelectorAll('script');
+  scripts.forEach(function (s) { s.remove(); });
+
+  var html = '<!doctype html>\n' + clone.outerHTML;
+  var blob = new Blob([html], { type: 'text/html' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'manual-detec-mov.html';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  document.getElementById('avisoPrep').style.display = '';
+}
+</script>
+</body>
+</html>
