@@ -47,6 +47,13 @@ for (const scale of [1, 0.5, 0.2]) {
     assert.equal(evaluateFrame(person({ scale, hand: [10, 65] }), [], W, H, { includeFace: true }).touching, true);
   });
 
+  for (const [name, hand] of [['la mejilla', [25, 15]], ['los ojos', [15, 10]], ['la nariz', [5, 30]], ['la frente baja', [5, 5]], ['el costado de la cara', [50, 25]], ['la oreja', [48, 22]], ['la oreja (dedos arriba)', [50, 12]]]) {
+    test(`mano en ${name} → NO detecta (solo cuenta la cabeza) (escala ${scale})`, () => {
+      assert.equal(evaluateFrame(person({ scale, hand }), [], W, H).touching, false);
+      assert.equal(evaluateFrame(person({ scale, hand }), [], W, H, { includeFace: true }).touching, true);
+    });
+  }
+
   test(`brazo levantado saludando, lejos de la cabeza → no detecta (escala ${scale})`, () => {
     assert.equal(evaluateFrame(person({ scale, hand: [260, -150] }), [], W, H).touching, false);
   });

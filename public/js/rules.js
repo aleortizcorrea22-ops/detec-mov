@@ -44,13 +44,27 @@ export function headZone(pose, w, h, sensitivity = 1) {
   // El centro del cráneo está un poco por encima de los ojos/nariz.
   const center = { x: face.x, y: face.y - 0.18 * body };
   const radius = 0.48 * body * sensitivity;
-  // Límite inferior: a la altura de la nariz. Así la mano en la boca o el mentón (comer, tomar algo)
-  // no cuenta como "rascarse la cabeza", salvo que se active includeFace.
-  const noseY = visible(pose[P.NOSE]) ? pose[P.NOSE].y * h : face.y + 0.06 * body;
   const shoulderY = visible(pose[P.L_SHOULDER]) && visible(pose[P.R_SHOULDER])
     ? (pose[P.L_SHOULDER].y + pose[P.R_SHOULDER].y) / 2 * h
     : face.y + 0.7 * body;
-  return { center, radius, body, shoulderY, faceLimitY: noseY + 0.03 * body };
+
+  // Solo cuenta la CABEZA (cuero cabelludo), no la cara:
+  //  - delante de la cara (franja central): la mano tiene que estar por encima de la frente
+  //    (bastante más arriba que los ojos). Tocarse ojos, nariz, mejillas, boca o la frente baja no cuenta.
+  //  - a los costados (más afuera que las orejas): cuenta solo claramente por encima de la oreja
+  //    (rascarse el costado de la cabeza). Tocarse la oreja no cuenta.
+  // Si se activa includeFace, vuelve a contar toda la zona (incluida la cara).
+  const eyes = [P.L_EYE, P.R_EYE].map((i) => pose[i]).filter(visible).map((l) => px(l, w, h));
+  const ears = [P.L_EAR, P.R_EAR].map((i) => pose[i]).filter(visible).map((l) => px(l, w, h));
+  const eyeY = eyes.length ? mean(eyes).y : face.y;
+  const earY = ears.length ? mean(ears).y : eyeY;
+  return {
+    center, radius, body, shoulderY,
+    faceX: face.x,
+    faceHalfW: 0.22 * body, // media cara (de oreja a oreja / 2)
+    crownLimitY: eyeY - 0.2 * body, // línea del pelo, aprox.
+    sideLimitY: earY - 0.12 * body, // por encima de la oreja (tocarse la oreja no cuenta)
+  };
 }
 
 /** Puntos de las manos que da el modelo de pose (muñeca, meñique, índice, pulgar). */
@@ -67,7 +81,7 @@ export function poseHandPoints(pose, w, h) {
  * @param pose  landmarks de pose de UNA persona (array de 33 {x,y,visibility})
  * @param hands array de manos (cada una array de 21 {x,y}) del HandLandmarker, opcional
  * @param opts.sensitivity  tamaño de la zona (1 = normal)
- * @param opts.includeFace  si es true, tocarse la cara (boca, mentón) también cuenta
+ * @param opts.includeFace  si es true, tocarse la cara (ojos, nariz, mejillas, boca, mentón) también cuenta
  * @returns {{touching:boolean, zone, closest:number|null, via:string|null, side:string|null}}
  */
 export function evaluateFrame(pose, hands, w, h, { sensitivity = 1, includeFace = false } = {}) {
@@ -78,7 +92,10 @@ export function evaluateFrame(pose, hands, w, h, { sensitivity = 1, includeFace 
   const check = (pt, via, side) => {
     // La mano tiene que estar por encima de los hombros (evita falsos positivos con la mano en el pecho).
     if (pt.y > zone.shoulderY) return;
-    if (!includeFace && pt.y > zone.faceLimitY) return;
+    if (!includeFace) {
+      const inFront = Math.abs(pt.x - zone.faceX) < zone.faceHalfW;
+      if (pt.y > (inFront ? zone.crownLimitY : zone.sideLimitY)) return; // es la cara, no la cabeza
+    }
     const d = dist(pt, zone.center) / zone.radius; // 1.0 = borde de la zona
     if (result.closest === null || d < result.closest) result.closest = d;
     if (d <= 1 && !result.touching) Object.assign(result, { touching: true, via, side });
