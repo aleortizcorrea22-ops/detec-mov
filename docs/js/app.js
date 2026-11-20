@@ -14,7 +14,7 @@ const els = {
   urlField: $('urlField'), cameraUrl: $('cameraUrl'), startBtn: $('startBtn'), stopBtn: $('stopBtn'),
   sensitivity: $('sensitivity'), sensVal: $('sensVal'), holdMs: $('holdMs'), holdVal: $('holdVal'),
   cooldownS: $('cooldownS'), coolVal: $('coolVal'), model: $('model'), includeFace: $('includeFace'), useHands: $('useHands'),
-  sendPhoto: $('sendPhoto'), beep: $('beep'), drawSkeleton: $('drawSkeleton'), mirror: $('mirror'), viewer: $('viewer'), shareLive: $('shareLive'), liveWebrtc: $('liveWebrtc'), liveAudioRow: $('liveAudioRow'), liveMicBtn: $('liveMicBtn'), liveSoundBtn: $('liveSoundBtn'),
+  sendPhoto: $('sendPhoto'), beep: $('beep'), drawSkeleton: $('drawSkeleton'), mirror: $('mirror'), viewer: $('viewer'), liveWebrtc: $('liveWebrtc'), liveAudioRow: $('liveAudioRow'), liveMicBtn: $('liveMicBtn'), liveSoundBtn: $('liveSoundBtn'),
   tgStatus: $('tgStatus'), testBtn: $('testBtn'), findChatBtn: $('findChatBtn'), chatList: $('chatList'), log: $('log'),
   directTelegramFields: $('directTelegramFields'), directToken: $('directToken'), directChatIds: $('directChatIds'), saveDirectBtn: $('saveDirectBtn'),
   deviceName: $('deviceName'), deviceNameShowBtn: $('deviceNameShowBtn'), maxPeople: $('maxPeople'), detectFalls: $('detectFalls'), fallHoldS: $('fallHoldS'),
@@ -28,7 +28,7 @@ const els = {
 
 const DEFAULTS = {
   sourceType: 'device', deviceId: '', cameraUrl: '', sensitivity: 1, holdMs: 600, cooldownS: 30,
-  model: 'full', includeFace: false, useHands: true, sendPhoto: true, beep: true, drawSkeleton: true, mirror: false, shareLive: false, liveWebrtc: false, liveMicMuted: false, liveSoundMuted: false,
+  model: 'full', includeFace: false, useHands: true, sendPhoto: true, beep: true, drawSkeleton: true, mirror: false, liveWebrtc: false, liveMicMuted: false, liveSoundMuted: false,
   deviceName: '', deviceNameAsked: false, maxPeople: 3, detectFalls: true, fallHoldS: 3,
   // Actividades: siempre se anotan en Eventos; a Telegram solo si se activa cada una.
   alertSento: false, alertLevanto: false, alertCamaEntra: false, alertCamaSale: false, alertCamina: false, alertQuieta: false,
@@ -50,7 +50,7 @@ function bindSettings() {
   els.holdMs.value = settings.holdMs;
   els.cooldownS.value = settings.cooldownS;
   els.model.value = settings.model;
-  for (const k of ['includeFace', 'useHands', 'sendPhoto', 'beep', 'drawSkeleton', 'mirror', 'shareLive', 'liveWebrtc', 'detectFalls', ...ACTIVITY_KEYS]) els[k].checked = settings[k];
+  for (const k of ['includeFace', 'useHands', 'sendPhoto', 'beep', 'drawSkeleton', 'mirror', 'liveWebrtc', 'detectFalls', ...ACTIVITY_KEYS]) els[k].checked = settings[k];
   els.deviceName.value = deviceName();
   els.maxPeople.value = settings.maxPeople;
   els.fallHoldS.value = settings.fallHoldS;
@@ -93,7 +93,6 @@ function bindSettings() {
   on(els.beep, 'beep');
   on(els.drawSkeleton, 'drawSkeleton');
   on(els.mirror, 'mirror');
-  on(els.shareLive, 'shareLive');
   on(els.liveWebrtc, 'liveWebrtc');
   on(els.detectFalls, 'detectFalls');
   for (const k of ACTIVITY_KEYS) on(els[k], k);
@@ -529,7 +528,6 @@ function processFrame({ source, w, h }) {
   });
 
   drawAll(w, h, list);
-  if (settings.shareLive) sendLiveFrame(source, w, h, now);
 
   for (const person of list) {
     if (person.fallState === 'alert') onPersonAlert('fall', person, list.length, w, h, source);
@@ -667,30 +665,6 @@ function drawPerson(w, h, { id, pose, hands, res, lying, box, posture, walking, 
       drawDots(hand, hand.map((_, i) => i), w, h, '#0ea5e9', lw * 1.6, Boolean);
     }
   }
-}
-
-// ---------------------------------------------------------------------------
-// Vista en vivo: le manda el cuadro actual (con el esqueleto) al servidor, para
-// que se pueda ver desde /live.html en otro equipo (celular, otra PC).
-
-const liveCanvas = document.createElement('canvas');
-const liveCtx = liveCanvas.getContext('2d');
-let lastLiveSend = 0;
-let liveSending = false;
-
-function sendLiveFrame(source, w, h, now) {
-  if (liveSending || now - lastLiveSend < 500) return; // ~2 cuadros por segundo alcanza para ver en vivo
-  lastLiveSend = now;
-  const scale = Math.min(1, 640 / w);
-  liveCanvas.width = Math.round(w * scale);
-  liveCanvas.height = Math.round(h * scale);
-  liveCtx.drawImage(source, 0, 0, liveCanvas.width, liveCanvas.height);
-  liveCtx.drawImage(els.overlay, 0, 0, liveCanvas.width, liveCanvas.height);
-  liveCanvas.toBlob((blob) => {
-    if (!blob) return;
-    liveSending = true;
-    fetch('/api/live', { method: 'POST', body: blob }).catch(() => {}).finally(() => { liveSending = false; });
-  }, 'image/jpeg', 0.55);
 }
 
 // ---------------------------------------------------------------------------
