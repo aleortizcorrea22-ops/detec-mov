@@ -72,9 +72,9 @@
     }
 
     sonidoBtn.addEventListener('click', () => {
-      video.muted = false;
-      video.play().catch(() => {});
-      sonidoBtn.textContent = '🔊 Sonido activado';
+      video.muted = !video.muted;
+      if (!video.muted) video.play().catch(() => {});
+      sonidoBtn.textContent = video.muted ? '🔊 Activar sonido' : '🔇 Desactivar sonido';
     });
 
     // Micrófono para hablar (push-to-talk): se pide una vez, antes de llamar,
