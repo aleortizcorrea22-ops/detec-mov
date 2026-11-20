@@ -6,7 +6,7 @@
 
 import { P, TouchTracker } from './rules.js';
 
-const MIN_VIS = 0.45;
+const MIN_VIS = 0.55;
 const vis = (lm) => lm && (lm.visibility === undefined || lm.visibility >= MIN_VIS);
 const px = (lm, w, h) => ({ x: lm.x * w, y: lm.y * h });
 const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
@@ -17,7 +17,7 @@ export const HIP = { L: 23, R: 24 };
 /** Recuadro (en píxeles) de los puntos visibles de una persona. */
 export function poseBox(pose, w, h) {
   const pts = pose.filter(vis).map((l) => px(l, w, h));
-  if (pts.length < 3) return null;
+  if (pts.length < 6) return null; // evita que una silla/sillón con pocos puntos débiles cuente como persona
   const xs = pts.map((p) => p.x);
   const ys = pts.map((p) => p.y);
   const x1 = Math.max(0, Math.min(...xs));

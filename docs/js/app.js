@@ -212,8 +212,8 @@ async function loadModels() {
       baseOptions: { modelAssetPath: modelUrl(MODEL_URLS[settings.model] ? settings.model : 'full') },
       runningMode: 'VIDEO',
       numPoses: Math.min(6, Math.max(1, Number(settings.maxPeople) || 1)),
-      minPoseDetectionConfidence: 0.4,
-      minPosePresenceConfidence: 0.4,
+      minPoseDetectionConfidence: 0.5,
+      minPosePresenceConfidence: 0.5,
       minTrackingConfidence: 0.4,
     });
   }
