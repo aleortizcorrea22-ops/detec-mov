@@ -1,5 +1,5 @@
 import { evaluateFrame, P } from './rules.js';
-import { PeopleTracker, assignHands, poseBox } from './people.js';
+import { PeopleTracker, assignHands, poseBox, filtrarPosesDuplicadas } from './people.js';
 import { setupInstallButton } from './install.js';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo } from './licencia.js';
@@ -509,7 +509,7 @@ function processFrame({ source, w, h }) {
   lastTs = ts;
 
   const poseRes = poseLandmarker.detectForVideo(source, ts);
-  const poses = poseRes.landmarks || [];
+  const poses = filtrarPosesDuplicadas(poseRes.landmarks || [], w, h);
   const handRes = settings.useHands && poses.length ? handLandmarker.detectForVideo(source, ts) : null;
   const hands = handRes?.landmarks || [];
   const handsByPose = assignHands(poses, hands, w, h);

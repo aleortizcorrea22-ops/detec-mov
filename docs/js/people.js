@@ -42,6 +42,30 @@ export function poseAnchor(pose, w, h) {
 }
 
 /**
+ * A veces el modelo detecta a la MISMA persona dos veces (dos "poses" casi superpuestas,
+ * típico cuando hay algo cerca que confunde al modelo, o con poca luz). Si dos poses
+ * quedan muy cerca una de la otra (en relación a su tamaño), se descarta la que tiene
+ * menos puntos visibles, y queda una sola persona real.
+ */
+export function filtrarPosesDuplicadas(poses, w, h, umbral = 0.5) {
+  const anchors = poses.map((p) => poseAnchor(p, w, h));
+  const descartar = new Set();
+  for (let i = 0; i < poses.length; i++) {
+    if (descartar.has(i) || !anchors[i]) continue;
+    for (let j = i + 1; j < poses.length; j++) {
+      if (descartar.has(j) || !anchors[j]) continue;
+      const d = dist(anchors[i], anchors[j]) / Math.max(anchors[i].size, anchors[j].size, 1);
+      if (d < umbral) {
+        const visI = poses[i].filter(vis).length;
+        const visJ = poses[j].filter(vis).length;
+        descartar.add(visI >= visJ ? j : i);
+      }
+    }
+  }
+  return poses.filter((_, i) => !descartar.has(i));
+}
+
+/**
  * ¿La persona está acostada / caída en el suelo?
  * Usa el tronco (centro de hombros → centro de caderas): parado o sentado está casi vertical;
  * tirado en el suelo queda casi horizontal y la cabeza a la altura de la cadera.
