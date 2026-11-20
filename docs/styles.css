@@ -33,10 +33,12 @@ body {
 }
 .topbar {
   position: sticky; top: 0; z-index: 5;
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px;
   padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
   background: var(--card); border-bottom: 1px solid var(--border);
 }
+/* Botones poco usados (como apagar), chiquitos para no empujar el resto fuera de pantalla */
+.btn-chico { padding: 6px 10px; min-width: 0; line-height: 1; font-size: 15px; }
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: .02em; }
 .brand img { border-radius: 8px; }
 main {
