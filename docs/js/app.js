@@ -8,6 +8,7 @@ import { iniciarPanelAdmin } from './admin-panel.js';
 const $ = (id) => document.getElementById(id);
 const els = {
   video: $('video'), ipImg: $('ipImg'), overlay: $('overlay'), placeholder: $('placeholder'), banner: $('banner'),
+  pantallaCompletaBtn: $('pantallaCompletaBtn'),
   statusDot: $('statusDot'), statusText: $('statusText'), fps: $('fps'),
   sourceType: $('sourceType'), deviceField: $('deviceField'), deviceSelect: $('deviceSelect'),
   urlField: $('urlField'), cameraUrl: $('cameraUrl'), startBtn: $('startBtn'), stopBtn: $('stopBtn'),
@@ -1081,6 +1082,16 @@ iniciarPanelAdmin();
 
 // ---------------------------------------------------------------------------
 // Compartir la aplicación (para instalarla en el celular de una familia nueva)
+
+// Pantalla completa, para ubicar bien la cámara al colocar el celular.
+els.pantallaCompletaBtn?.addEventListener('click', async () => {
+  try {
+    if (!document.fullscreenElement) await els.viewer.requestFullscreen();
+    else await document.exitFullscreen();
+  } catch (e) {
+    addLog('No se pudo pasar a pantalla completa: ' + e.message, 'alert');
+  }
+});
 
 (function iniciarCompartir() {
   const URL_APP = 'https://aleortizcorrea22-ops.github.io/detec-mov/';
