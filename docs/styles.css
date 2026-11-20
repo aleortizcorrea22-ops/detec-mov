@@ -84,6 +84,8 @@ input[type=range] { width: 100%; accent-color: var(--primary); }
 .btn-danger:hover { background: var(--alert); color: #fff; }
 #liveMicBtn, #liveSoundBtn { background: #d97706; border-color: #d97706; color: #fff; font-weight: 700; }
 #liveMicBtn:hover, #liveSoundBtn:hover { background: #b45309; border-color: #b45309; }
+#liveMicBtn.is-muted, #liveSoundBtn.is-muted { background: #b91c1c; border-color: #b91c1c; }
+#liveMicBtn.is-muted:hover, #liveSoundBtn.is-muted:hover { background: #991b1b; border-color: #991b1b; }
 .mono { font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace; background: var(--bg); padding: 8px; border-radius: 8px; white-space: pre-wrap; word-break: break-all; }
 .log { list-style: none; padding: 0; margin: 0; max-height: 240px; overflow: auto; font-size: 13px; }
 .log li { padding: 6px 0; border-bottom: 1px solid var(--border); }

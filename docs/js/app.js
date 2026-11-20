@@ -68,9 +68,11 @@ function bindSettings() {
     els.viewer.classList.toggle('mirrored', settings.mirror);
     els.liveAudioRow.hidden = !settings.liveWebrtc;
     els.liveMicBtn.hidden = !settings.liveWebrtc;
-    els.liveMicBtn.textContent = settings.liveMicMuted ? '🎤 Activar micrófono' : '🎤 Silenciar micrófono';
+    els.liveMicBtn.textContent = settings.liveMicMuted ? '🔇 Micrófono SILENCIADO · tocar para activar' : '🎤 Silenciar micrófono';
+    els.liveMicBtn.classList.toggle('is-muted', settings.liveMicMuted);
     els.liveSoundBtn.hidden = !settings.liveWebrtc;
-    els.liveSoundBtn.textContent = settings.liveSoundMuted ? '🔈 Activar sonido' : '🔈 Silenciar sonido';
+    els.liveSoundBtn.textContent = settings.liveSoundMuted ? '🔇 Sonido SILENCIADO · tocar para activar' : '🔈 Silenciar sonido';
+    els.liveSoundBtn.classList.toggle('is-muted', settings.liveSoundMuted);
   };
   const on = (el, key, parse = (v) => v) => el.addEventListener('input', () => {
     settings[key] = parse(el.type === 'checkbox' ? el.checked : el.value);
