@@ -2,7 +2,7 @@ import { evaluateFrame, P } from './rules.js';
 import { PeopleTracker, assignHands, poseBox, filtrarPosesDuplicadas } from './people.js';
 import { setupInstallButton } from './install.js';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
-import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo } from './licencia.js';
+import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo, loadLicenciaConfig } from './licencia.js';
 import { iniciarPanelAdmin, NOMBRE_ADMIN_SECRETO } from './admin-panel.js';
 
 const $ = (id) => document.getElementById(id);
@@ -358,7 +358,13 @@ function openLivePeer(id) {
   livePeer.on('open', async () => {
     if (liveLinkSent) return;
     liveLinkSent = true;
-    const link = `${location.origin}${location.pathname.replace(/[^/]*$/, '')}ver.html?n=${encodeURIComponent(nombreVisible())}#${id}`;
+    // Al link de siempre (este vigía puntual) se le agrega el id del sistema, así si
+    // hay otro vigía más transmitiendo a la vez, la misma página los junta a los dos.
+    const { id: idSistema } = loadLicenciaConfig();
+    const base = `${location.origin}${location.pathname.replace(/[^/]*$/, '')}`;
+    const link = idSistema
+      ? `${base}multiver.html?id=${encodeURIComponent(idSistema)}`
+      : `${base}ver.html?n=${encodeURIComponent(nombreVisible())}#${id}`;
     addLog(`Video en vivo listo: ${link}`);
     try {
       await sendAlert({ text: `🔴 ${nombreVisible()}: ver esta cámara en vivo\n${link}` });
