@@ -37,6 +37,7 @@
     <li><a href="#que-es">Qué es</a></li>
     <li><a href="#modos">Los dos modos</a></li>
     <li><a href="#telegram-bot">Crear el bot y el grupo de Telegram</a></li>
+    <li><a href="#sistemas">Varios sistemas independientes</a></li>
     <li><a href="#celular-solo">Modo celular solo (recomendado, sin PC)</a></li>
     <li><a href="#con-pc">Modo con PC / servidor</a></li>
     <li><a href="#camara">Elegir cámara (trasera / delantera)</a></li>
@@ -105,6 +106,32 @@ DETEC MOV mira con una cámara a la persona y, cuando se detecta que una mano to
 
 <h3>5. Probar</h3>
 <p>Con el token y el chat_id ya guardados en la app, tocá <b>"Enviar alerta de prueba"</b>. Si el mensaje llega al grupo, quedó todo configurado. Para avisos a varios grupos o personas, se pueden poner varios chat_id separados por coma en ese mismo campo.</p>
+
+<h2 id="sistemas">Varios sistemas independientes (distintas personas o lugares)</h2>
+<p>Un "sistema" es un conjunto de celulares vigía que mandan todos al mismo grupo de Telegram, para una sola persona o un solo lugar. Se pueden armar varios sistemas, totalmente separados entre sí: los vigías de uno no ven nada del otro, porque cada celular solo conoce el token y el chat_id de su propio sistema.</p>
+<p><b>Recomendación: un bot distinto por sistema</b> (no reusar el mismo bot para varios sistemas). Con el mismo bot, el token sirve para cualquiera de sus grupos: quien tenga ese token en un vigía podría mandar mensajes a otro grupo o encontrarlo con "Buscar mi chat_id". Con un bot por sistema, el token de uno no sirve para nada en los demás.</p>
+<h3>Para armar un sistema nuevo</h3>
+<ol>
+  <li>Creá un bot nuevo en @BotFather (ver sección anterior) → nuevo token, exclusivo de este sistema.</li>
+  <li>Creá un grupo de Telegram nuevo con las personas de ese sistema, agregá ese bot nuevo, y conseguí el chat_id de ese grupo (igual que antes).</li>
+  <li>En cada celular vigía de ese sistema: abrí la app, pegá el token y el chat_id de ESE sistema, tocá Guardar, probá la alerta y poné el nombre del equipo.</li>
+  <li>El manual para esas personas se genera por separado, con el token de ese sistema (el recuadro violeta del manual para el usuario).</li>
+</ol>
+<h3>Como administrador de varios sistemas</h3>
+<ul>
+  <li>Si sos vos quien crea los bots, todos quedan en tu cuenta de @BotFather: desde ahí los administrás (cambiar nombre, foto, o anular un token con <code>/revoke</code> si se filtra).</li>
+  <li>Sumate a todos los grupos (o creálos vos) para poder ver las alertas de todos los sistemas; cada usuario solo ve el grupo del suyo.</li>
+  <li>Si alguien deja de participar, sacalo del grupo de su sistema. Si hace falta, cambiá el token de ese sistema y actualizalo en sus vigías.</li>
+</ul>
+<table>
+  <thead><tr><th>Sistema</th><th>Bot (@BotFather)</th><th>Grupo</th><th>Vigías (equipos)</th></tr></thead>
+  <tbody>
+    <tr><td>Ej.: Casa de Juana</td><td>@juana_detecmov_bot</td><td>Juana — avisos</td><td>Equipo 1 · Dormitorio, Equipo 2 · Living</td></tr>
+    <tr><td></td><td></td><td></td><td></td></tr>
+    <tr><td></td><td></td><td></td><td></td></tr>
+  </tbody>
+</table>
+<div class="nota">No anotes el token en esta tabla ni en ningún lado que puedas compartir: solo nombre de sistema, bot, grupo y qué equipos vigía tiene.</div>
 
 <h2 id="celular-solo">Modo celular solo (recomendado, sin PC)</h2>
 <ol>
