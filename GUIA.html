@@ -108,21 +108,96 @@ DETEC MOV mira con una cámara a la persona y, cuando se detecta que una mano to
 <p>Con el token y el chat_id ya guardados en la app, tocá <b>"Enviar alerta de prueba"</b>. Si el mensaje llega al grupo, quedó todo configurado. Para avisos a varios grupos o personas, se pueden poner varios chat_id separados por coma en ese mismo campo.</p>
 
 <h2 id="sistemas">Varios sistemas independientes (distintas personas o lugares)</h2>
-<p>Un "sistema" es un conjunto de celulares vigía que mandan todos al mismo grupo de Telegram, para una sola persona o un solo lugar. Se pueden armar varios sistemas, totalmente separados entre sí: los vigías de uno no ven nada del otro, porque cada celular solo conoce el token y el chat_id de su propio sistema.</p>
-<p><b>Recomendación: un bot distinto por sistema</b> (no reusar el mismo bot para varios sistemas). Con el mismo bot, el token sirve para cualquiera de sus grupos: quien tenga ese token en un vigía podría mandar mensajes a otro grupo o encontrarlo con "Buscar mi chat_id". Con un bot por sistema, el token de uno no sirve para nada en los demás.</p>
-<h3>Para armar un sistema nuevo</h3>
+
+<p><b>Qué es un "sistema":</b> es un grupo de Telegram más uno o varios celulares vigía, todo para UNA sola persona o UN solo lugar. Por ejemplo, "el sistema de mi tía" es: su grupo de Telegram + el o los celulares que la vigilan a ella. Si después armás lo mismo para otra persona, eso es OTRO sistema, separado del primero: ese grupo nuevo no va a recibir nada de los celulares del primer sistema, y al revés tampoco. No se mezclan en absoluto, siempre y cuando sigas los pasos de abajo tal cual.</p>
+
+<p><b>Por qué no se mezclan:</b> cada celular vigía, en la sección "Telegram" de la app, tiene guardados un <i>token</i> (la "contraseña" de un bot) y un <i>chat_id</i> (el número del grupo). El celular manda las alertas SOLO a ese chat_id, usando SOLO ese token. Si a cada sistema le das un token y un chat_id distintos, es matemáticamente imposible que las alertas de un sistema caigan en el grupo de otro.</p>
+
+<div class="nota">Si tenés la app para PC instalada (<code>C:\DETEC MOV</code>), hay un archivo <code>admin-sistemas.html</code> ahí que hace varios de los pasos de abajo por vos con solo tocar un botón (verificar el token, buscar el chat_id, mandar la prueba, y generar el manual ya completado). Igual te dejo acá todos los pasos explicados a mano, por si no tenés esa PC a mano o preferís hacerlo desde el celular.</div>
+
+<div class="nota"><b>Antes de empezar, una decisión importante:</b> para cada sistema nuevo, creá un BOT nuevo (no reutilices el mismo bot de otro sistema). Te explico por qué con un ejemplo: si usás el mismo bot para el sistema de tu tía y el de tu vecino, y alguien del lado de tu vecino llega a tener el token de ese bot (por ejemplo porque se lo diste para configurar su celular vigía), con ese mismo token esa persona podría, si quisiera, mandarle mensajes al grupo de tu tía, o encontrar el chat_id del grupo de tu tía tocando "Buscar mi chat_id" en la app. Con un bot distinto por cada sistema, el token de un sistema no sirve absolutamente para nada en los demás: es la única forma de que queden realmente separados.</div>
+
+<h3>Paso a paso para armar un sistema nuevo, de cero</h3>
+<p>Vas a repetir, para este sistema nuevo, los mismos pasos de la sección "Crear el bot y el grupo de Telegram" de más arriba, pero con nombres distintos para no confundirte con los de otro sistema. Te lo repito acá completo, con todos los detalles, para que no tengas que ir y volver:</p>
+
+<h4>1. Crear un bot nuevo, exclusivo para este sistema</h4>
 <ol>
-  <li>Creá un bot nuevo en @BotFather (ver sección anterior) → nuevo token, exclusivo de este sistema.</li>
-  <li>Creá un grupo de Telegram nuevo con las personas de ese sistema, agregá ese bot nuevo, y conseguí el chat_id de ese grupo (igual que antes).</li>
-  <li>En cada celular vigía de ese sistema: abrí la app, pegá el token y el chat_id de ESE sistema, tocá Guardar, probá la alerta y poné el nombre del equipo.</li>
-  <li>El manual para esas personas se genera por separado, con el token de ese sistema (el recuadro violeta del manual para el usuario).</li>
+  <li>Abrí la app de Telegram (en tu celular o en la computadora, da igual).</li>
+  <li>Arriba, donde se busca, escribí <code>BotFather</code> y tocá el que tiene una tilde azul al lado del nombre (es el chat oficial de Telegram, <code>@BotFather</code>). Entrá a ese chat.</li>
+  <li>Abajo, donde se escribe un mensaje, escribí exactamente <code>/newbot</code> y enviálo (como si fuera un mensaje de WhatsApp cualquiera).</li>
+  <li>El BotFather te va a contestar pidiéndote un <b>nombre</b> para el bot. Este nombre es solo para identificarlo, puede tener espacios y acentos. Como esto es para un sistema nuevo, ponele algo que lo distinga del resto, por ejemplo <code>Avisos de Juana</code> (cambiá "Juana" por el nombre real de la persona o el lugar). Escribilo y enviálo.</li>
+  <li>Ahora te va a pedir un <b>usuario</b> (en inglés, "username") para el bot. Este es distinto del nombre de arriba: no puede tener espacios ni acentos, y tiene que terminar siempre en la palabra <code>bot</code>. Por ejemplo, para el ejemplo de Juana podría ser <code>AvisosJuanaBot</code> o <code>JuanaDetecMovBot</code>. Escribilo y enviálo.</li>
+  <li>Si ese usuario ya lo está usando otra persona en todo Telegram (es como un nombre de usuario de Instagram, tiene que ser único en el mundo), el BotFather te va a avisar que ya está ocupado y te va a pedir que pruebes otro. Probá agregando números o cambiando alguna palabra, hasta que te acepte uno.</li>
+  <li>Cuando te acepta el usuario, el BotFather te manda un mensaje con varias líneas. Ahí adentro, en una de las líneas, vas a ver algo como esto: <code>123456789:AAHxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</code>. Eso completo (los números, los dos puntos, y todas las letras y números después) es el <b>token</b> de este bot nuevo.</li>
+  <li><b>Copiá ese token tal cual, con cuidado de llevarte todo</b> (algunos caracteres pueden quedar cortados en la pantalla, deslizá para asegurarte de copiarlo entero), y pegalo en algún lugar temporal mientras seguís con los pasos siguientes (por ejemplo, en una nota del celular, y después la borrás). No hace falta memorizarlo ni anotarlo en papel.</li>
 </ol>
-<h3>Como administrador de varios sistemas</h3>
+
+<h4>2. Crear el grupo de Telegram de este sistema</h4>
+<ol>
+  <li>En Telegram, buscá el botón para escribir algo nuevo: en el celular suele ser un círculo con un lápiz, abajo a la derecha, o un ícono de "+". En la computadora puede estar arriba a la izquierda, al lado de la lupa de buscar.</li>
+  <li>Tocá ese botón y elegí la opción <b>"Nuevo grupo"</b> (en inglés, "New Group").</li>
+  <li>Te va a pedir que elijas al menos un contacto para agregar al grupo. Agregá a la o las personas que van a recibir los avisos de este sistema (pueden ser uno o varios: familiares, cuidadores, etc.). Si por ahora no tenés a nadie más para agregar, podés agregarte un contacto cualquiera y sacarlo después, Telegram no te deja crear un grupo sin al menos un miembro además de vos.</li>
+  <li>Te va a pedir un nombre para el grupo. Ponele algo que lo identifique bien, por ejemplo <code>Juana - avisos DETEC MOV</code>.</li>
+  <li>Confirmá y el grupo queda creado.</li>
+</ol>
+
+<h4>3. Meter el bot nuevo dentro del grupo nuevo</h4>
+<ol>
+  <li>Entrá al grupo que recién creaste (tocalo en la lista de chats).</li>
+  <li>Arriba, tocá el nombre del grupo (o los tres puntitos de arriba a la derecha, según el celular), y buscá una opción que diga <b>"Agregar miembro"</b>, <b>"Agregar"</b> o <b>"Add member"</b>.</li>
+  <li>En el buscador que aparece, escribí el nombre de usuario del bot que creaste en el paso 1 (por ejemplo <code>AvisosJuanaBot</code>, con o sin la @ adelante) y tocalo cuando aparezca en la lista.</li>
+  <li>Confirmá para agregarlo. Es posible que Telegram te muestre un aviso diciendo que el bot "no tiene acceso a los mensajes del grupo" o algo similar: esto es normal y no es un error, no hagas nada con ese aviso. Igual va a poder mandar los avisos al grupo; ese mensaje habla de si puede LEER lo que escriben las personas del grupo (no hace falta eso para que funcione).</li>
+  <li>Una vez agregado el bot, escribí cualquier cosa en el grupo, por ejemplo la palabra <code>hola</code>, y enviála. Este paso es importante: hace que Telegram registre que "hay actividad reciente" en ese grupo, lo cual es necesario para el paso siguiente.</li>
+</ol>
+
+<h4>4. Conseguir el chat_id (el número) de este grupo nuevo</h4>
+<ol>
+  <li>Abrí la app DETEC MOV en cualquier celular (puede ser el mismo celular que después va a vigilar, o cualquier otro celular donde tengas la app, solo para hacer este paso).</li>
+  <li>En la sección "Telegram" de la app, pegá el token nuevo que copiaste en el paso 1 (en el campo que dice "Token del bot"), y tocá <b>Guardar</b>.</li>
+  <li>Tocá el botón <b>"Buscar mi chat_id"</b>.</li>
+  <li>Va a aparecer una lista de chats. Buscá en esa lista el nombre del grupo que creaste en el paso 2 (por ejemplo "Juana - avisos DETEC MOV").</li>
+  <li>Al lado o abajo del nombre vas a ver un número. Si el grupo es chico, ese número suele empezar con un signo menos, por ejemplo <code>-123456789</code>. Si el grupo creció o Telegram lo convirtió en "supergrupo", el número puede ser más largo y empezar con <code>-100</code>, por ejemplo <code>-1004313817541</code>. Copiá el número ENTERO, incluyendo el signo menos del principio.</li>
+  <li>Ese número completo es el <b>chat_id</b> de este sistema nuevo.</li>
+</ol>
+
+<h4>5. Probar que este sistema nuevo funciona</h4>
+<ol>
+  <li>Todavía en la app (con el token nuevo ya guardado del paso 4), pegá también el chat_id nuevo en el campo "Chat ID", al lado del token, y tocá <b>Guardar</b> otra vez.</li>
+  <li>Tocá el botón <b>"Enviar alerta de prueba"</b>.</li>
+  <li>Fijate en el grupo de Telegram de este sistema (el que creaste en el paso 2): tiene que llegar un mensaje de prueba ahí. Si llegó, este sistema nuevo ya está completo y funcionando: ya tenés su token y su chat_id propios.</li>
+  <li>Si NO llegó nada, repasá el paso 3 (que el bot esté agregado al grupo) y el paso 4 (que copiaste el chat_id completo, con el signo menos).</li>
+</ol>
+
+<h4>6. Configurar los celulares vigía de este sistema</h4>
+<p>Ahora que tenés el token y el chat_id de este sistema nuevo, hay que ponerlos en cada celular que va a vigilar para esta persona o lugar (puede ser uno solo, o varios si hay varios equipos vigía):</p>
+<ol>
+  <li>En cada uno de esos celulares, abrí la app DETEC MOV (seguí la sección "Modo celular solo" más abajo si todavía no la instalaste en ese celular).</li>
+  <li>En la sección "Telegram" de la app, pegá el mismo token y el mismo chat_id de este sistema (los del paso 4), y tocá <b>Guardar</b>.</li>
+  <li>Tocá <b>"Enviar alerta de prueba"</b> en ese celular también, para confirmar que ese celular en particular manda bien al grupo de este sistema.</li>
+  <li>Tocá <b>Iniciar</b>: la primera vez te va a preguntar el nombre de este equipo vigía (por ejemplo "Equipo 1 · Dormitorio"). Ponele un nombre que lo distinga de los otros equipos de este mismo sistema, si hay más de uno.</li>
+</ol>
+<div class="nota">Repetí este paso 6 en cada celular que vigile para esta misma persona o lugar. Todos esos celulares usan el MISMO token y el MISMO chat_id (los de este sistema), pero cada uno tiene su propio nombre de equipo.</div>
+
+<h4>7. El manual para quien va a usar el celular (no vos)</h4>
+<p>Si la persona que va a usar el celular vigía no es técnica, generale un manual ya preparado con los datos de este sistema: abrí <code>manual.html</code> desde la app (botón "Manual para el usuario" arriba de todo), completá el token y el chat_id de ESTE sistema en el recuadro violeta de arriba (ese recuadro es solo para vos, quien lo prepara; la persona que lo va a usar no lo ve), y descargá la copia lista para mandarle. Hacé esto una vez por cada sistema, con los datos de ESE sistema.</p>
+
+<h3>Si manejás varios sistemas al mismo tiempo (como administrador)</h3>
 <ul>
-  <li>Si sos vos quien crea los bots, todos quedan en tu cuenta de @BotFather: desde ahí los administrás (cambiar nombre, foto, o anular un token con <code>/revoke</code> si se filtra).</li>
-  <li>Sumate a todos los grupos (o creálos vos) para poder ver las alertas de todos los sistemas; cada usuario solo ve el grupo del suyo.</li>
-  <li>Si alguien deja de participar, sacalo del grupo de su sistema. Si hace falta, cambiá el token de ese sistema y actualizalo en sus vigías.</li>
+  <li>Como todos los bots los creás vos con tu cuenta de Telegram, todos van a aparecer juntos cuando hables de nuevo con @BotFather (escribile <code>/mybots</code> para ver la lista completa). Desde ahí podés entrar a cada uno para cambiarle el nombre, la foto, o para anular su token con <code>/revoke</code> si alguna vez se filtra o lo necesitás cambiar.</li>
+  <li>Sumate vos mismo a todos los grupos que vayas creando (o creálos vos directamente), así podés ver en tu celular las alertas de todos los sistemas a la vez, mientras que cada familia o cada usuario solo ve el grupo que le corresponde a él.</li>
+  <li>Si en algún momento alguien deja de necesitar el servicio, o se va alguien del lugar, simplemente sacalo de ese grupo de Telegram puntual: no afecta a los demás sistemas. Si por algún motivo necesitás "cortar" el acceso de un celular vigía entero (por ejemplo, se perdió o se lo robaron), cambiá el token de ESE sistema (con <code>/revoke</code> en BotFather te da uno nuevo) y volvé a poner el token nuevo en los celulares vigía buenos de ese mismo sistema; el celular perdido se queda con el token viejo, que ya no sirve para nada.</li>
 </ul>
+
+<p>Para no perderte entre varios sistemas, usá esta tabla como anotador (podés imprimirla, pasarla a una hoja de cálculo, o simplemente copiarla a mano donde te sea más cómodo). <b>Importante: nunca anotes aquí el token</b>, ni en ningún lugar que otra persona pueda llegar a ver; el token solo tiene que estar guardado dentro de la app, en cada celular, y en tu cabeza (o en un lugar privado y seguro) mientras armás el sistema.</p>
+<table>
+  <thead><tr><th>Sistema (persona/lugar)</th><th>Usuario del bot (@...)</th><th>Nombre del grupo</th><th>Equipos vigía que tiene</th></tr></thead>
+  <tbody>
+    <tr><td>Ej.: Casa de Juana</td><td>@AvisosJuanaBot</td><td>Juana - avisos DETEC MOV</td><td>Equipo 1 · Dormitorio, Equipo 2 · Living</td></tr>
+    <tr><td></td><td></td><td></td><td></td></tr>
+    <tr><td></td><td></td><td></td><td></td></tr>
+    <tr><td></td><td></td><td></td><td></td></tr>
+  </tbody>
+</table>
 <table>
   <thead><tr><th>Sistema</th><th>Bot (@BotFather)</th><th>Grupo</th><th>Vigías (equipos)</th></tr></thead>
   <tbody>
