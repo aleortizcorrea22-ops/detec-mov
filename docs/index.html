@@ -187,6 +187,39 @@
 
     <section class="panel" id="panelAdmin" hidden>
       <h2>Panel de administrador</h2>
+
+      <details style="border:1px solid var(--border);border-radius:10px;padding:8px 12px;margin-bottom:12px">
+        <summary style="cursor:pointer;font-weight:700">📘 Guía: cómo dar de alta un sistema nuevo</summary>
+        <div style="font-size:.9em;margin-top:8px">
+          <h3>1. Crear el bot de Telegram</h3>
+          <ol style="padding-left:1.1rem">
+            <li>Buscá <b>@BotFather</b> en Telegram y escribile <code>/newbot</code>.</li>
+            <li>Elegí un nombre (ej. "DETEC MOV Familia Pérez") y un usuario que termine en <code>bot</code>.</li>
+            <li>Te da un mensaje con el <b>token</b> (debajo de "Use this token..."). Copialo.</li>
+          </ol>
+          <p class="muted">Un bot nuevo por cada familia, nunca reutilices uno.</p>
+
+          <h3>2. Crear el grupo</h3>
+          <ol style="padding-left:1.1rem">
+            <li>Creá un grupo nuevo en Telegram y agregale el bot.</li>
+            <li>Agregate vos también.</li>
+            <li>Mandá <code>/start@usuario_del_bot</code> en el grupo (hace falta para que el bot "vea" el grupo).</li>
+          </ol>
+
+          <h3>3. Conseguir el chat_id</h3>
+          <p>Lo más fácil: pegá el token en cualquier celular con la app abierta (sección Telegram) y tocá <b>"Buscar mi chat_id"</b>. El del grupo empieza con <code>-100</code>.</p>
+
+          <h3>4. Dar de alta el sistema acá abajo</h3>
+          <p>En "Dar de alta un sistema nuevo": ID = el chat_id, Nombre = como quieras identificarlo, Usuario del bot y Token = del paso 1, Días = cuánto dura el permiso.</p>
+
+          <h3>5. Mandar el manual a la familia</h3>
+          <p>Desde tu PC, abrí <code>manual-detec-mov.html</code>, pegá el token y chat_id en el recuadro violeta, y descargá la copia lista para enviar por Telegram o WhatsApp.</p>
+
+          <h3>6. Probar</h3>
+          <p>Pedile a la familia que toque "Enviar alerta de prueba" y confirmá que te llegue al grupo.</p>
+        </div>
+      </details>
+
       <p id="paHint" class="muted" style="font-size:.8em"></p>
       <div id="paLoginBox">
         <label class="field">
