@@ -111,3 +111,10 @@ dialog::backdrop { background: rgba(0,0,0,.5); }
 }
 .licencia-bloqueo-caja h2 { margin: 0 0 .75rem; font-size: 1.3rem; }
 .licencia-bloqueo-caja p { margin: 0; font-size: 1rem; line-height: 1.4; color: #d7d7df; }
+
+/* Panel de administrador (oculto, solo en el equipo con el nombre secreto) */
+#panelAdmin table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: .9em; }
+#panelAdmin th, #panelAdmin td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+#panelAdmin .estado-activa { color: #1a7a34; font-weight: 600; }
+#panelAdmin .estado-por-vencer { color: #a16207; font-weight: 600; }
+#panelAdmin .estado-vencida { color: #b91c1c; font-weight: 600; }

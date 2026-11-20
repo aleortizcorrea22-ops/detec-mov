@@ -3,6 +3,7 @@ import { PeopleTracker, assignHands, poseBox } from './people.js';
 import { setupInstallButton } from './install.js';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo } from './licencia.js';
+import { iniciarPanelAdmin } from './admin-panel.js';
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -15,7 +16,7 @@ const els = {
   sendPhoto: $('sendPhoto'), beep: $('beep'), drawSkeleton: $('drawSkeleton'), mirror: $('mirror'), viewer: $('viewer'), shareLive: $('shareLive'), liveWebrtc: $('liveWebrtc'), liveAudioRow: $('liveAudioRow'), liveMicBtn: $('liveMicBtn'), liveSoundBtn: $('liveSoundBtn'),
   tgStatus: $('tgStatus'), testBtn: $('testBtn'), findChatBtn: $('findChatBtn'), chatList: $('chatList'), log: $('log'),
   directTelegramFields: $('directTelegramFields'), directToken: $('directToken'), directChatIds: $('directChatIds'), saveDirectBtn: $('saveDirectBtn'),
-  deviceName: $('deviceName'), maxPeople: $('maxPeople'), detectFalls: $('detectFalls'), fallHoldS: $('fallHoldS'),
+  deviceName: $('deviceName'), deviceNameShowBtn: $('deviceNameShowBtn'), maxPeople: $('maxPeople'), detectFalls: $('detectFalls'), fallHoldS: $('fallHoldS'),
   fallVal: $('fallVal'), fallHoldField: $('fallHoldField'),
   alertSento: $('alertSento'), alertLevanto: $('alertLevanto'), alertCamaEntra: $('alertCamaEntra'), alertCamaSale: $('alertCamaSale'),
   alertCamina: $('alertCamina'), alertQuieta: $('alertQuieta'), bedMarkBtn: $('bedMarkBtn'), bedClearBtn: $('bedClearBtn'), bedInfo: $('bedInfo'),
@@ -99,6 +100,11 @@ function bindSettings() {
   on(els.fallHoldS, 'fallHoldS', Number);
   on(els.deviceName, 'deviceName', (v) => v.slice(0, 40));
   els.deviceName.addEventListener('input', () => { settings.deviceNameAsked = true; saveSettings(); });
+  els.deviceNameShowBtn.addEventListener('click', () => {
+    const verlo = els.deviceName.type === 'password';
+    els.deviceName.type = verlo ? 'text' : 'password';
+    els.deviceNameShowBtn.textContent = verlo ? 'Ocultar' : 'Ver';
+  });
   // Cantidad de personas: hay que recargar el modelo de pose para que tome el cambio.
   els.maxPeople.addEventListener('change', async () => {
     settings.maxPeople = Math.min(6, Math.max(1, Number(els.maxPeople.value) || 1));
@@ -1063,6 +1069,7 @@ refreshTelegramStatus();
 listDevices().catch(() => {});
 setupInstallButton($('installBtn'), $('iosDialog'));
 iniciarChequeoLicencia();
+iniciarPanelAdmin();
 
 $('shutdownBtn').addEventListener('click', async () => {
   if (!confirm('¿Apagar DETEC MOV? Se va a detener la vigilancia, incluida la que corre en segundo plano. Para volver a usarla vas a tener que prender la PC de nuevo o abrir el acceso directo del escritorio.')) return;

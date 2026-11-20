@@ -54,7 +54,10 @@
       <h2>Este equipo</h2>
       <label class="field">
         <span>Nombre de este equipo (aparece en cada aviso de Telegram)</span>
-        <input id="deviceName" type="text" maxlength="40" autocomplete="off" placeholder="Ej.: Equipo 1 · Dormitorio de la abuela">
+        <div style="display:flex;gap:.4rem">
+          <input id="deviceName" type="password" maxlength="40" autocomplete="off" placeholder="Ej.: Equipo 1 · Dormitorio de la abuela" style="flex:1">
+          <button type="button" id="deviceNameShowBtn" class="btn">Ver</button>
+        </div>
       </label>
 
       <h2>Cámara</h2>
@@ -164,6 +167,33 @@
 
       <h2>Eventos</h2>
       <ul id="log" class="log"></ul>
+    </section>
+
+    <section class="panel" id="panelAdmin" hidden>
+      <h2>Panel de administrador</h2>
+      <p id="paHint" class="muted" style="font-size:.8em"></p>
+      <div id="paLoginBox">
+        <label class="field">
+          <span>Clave de administrador</span>
+          <input id="paClave" type="password" autocomplete="current-password">
+        </label>
+        <button type="button" id="paEntrar" class="btn">Entrar</button>
+      </div>
+      <p id="paMsg" class="muted"></p>
+      <div class="tbl">
+        <table id="paTabla">
+          <thead><tr><th>Nombre</th><th>Estado</th><th>Vence</th><th>Días</th><th>Acción</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <h3>Dar de alta un sistema nuevo</h3>
+      <div class="row">
+        <input id="paNId" placeholder="id (chat_id)">
+        <input id="paNNombre" placeholder="nombre">
+        <input id="paNDias" type="number" value="30" style="width:70px">
+        <button type="button" id="paCrear" class="btn">Crear</button>
+      </div>
+      <p class="muted" style="font-size:.8em">Para ver tokens, QR, o fijar una fecha exacta, usá el panel completo: detecmov.axivenvirtual.com/admin</p>
     </section>
   </main>
 
