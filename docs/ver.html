@@ -4,11 +4,23 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>DETEC MOV — Ver en vivo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@800&display=swap">
   <style>
     :root { color-scheme: dark; }
     html, body { margin: 0; height: 100%; background: #0b0f10; color: #e6edf0; font: 16px system-ui, sans-serif; }
     body { display: grid; grid-template-rows: auto 1fr; }
-    header { padding: 10px 14px; display: flex; align-items: center; gap: 10px; }
+    header { padding: 10px 14px; display: flex; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 5; background: #0b0f10; flex-wrap: wrap; }
+    .axiven-brand { display: flex; align-items: center; gap: 6px; padding-right: 12px; border-right: 1px solid #27313a; }
+    .axiven-brand img { width: 40px; height: 40px; transform-origin: 50% 50%; animation: 16s ease 0s infinite normal none running axiven-logo-cycle; will-change: transform; }
+    .axiven-brand b { font: 800 22px "Barlow Condensed", Arial, sans-serif; letter-spacing: 1px; color: #e6edf0; }
+    .axiven-brand b span { color: #ff8a2b; }
+    .axiven-brand small { display: block; text-align: center; letter-spacing: 3px; font-size: 7px; color: #9aa7ab; }
+    @keyframes axiven-logo-cycle {
+      0%, 25% { transform: rotate(0deg); animation-timing-function: cubic-bezier(0.7, 0, 0.3, 1); }
+      85%, 100% { transform: rotate(4320deg); }
+    }
+    @media (prefers-reduced-motion: reduce) { .axiven-brand img { animation: none !important; } }
     #status { color: #9aa7ab; font-size: 14px; }
     .stage { display: grid; place-items: center; padding: 10px; }
     video { max-width: 100%; max-height: calc(100vh - 60px); border-radius: 8px; background: #000; }
@@ -26,6 +38,10 @@
 </head>
 <body>
   <header>
+    <div class="axiven-brand">
+      <img src="icons/axiven-logo.svg" alt="Logo AXIVEN">
+      <div><b>A<span>X</span>IVEN</b><small>INGENIERÍA</small></div>
+    </div>
     <strong id="equipo" style="font-size:18px;margin-right:6px"></strong>
     <span id="dot" class="dot"></span>
     <span id="status">Conectando…</span>
