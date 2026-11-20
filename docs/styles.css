@@ -117,7 +117,7 @@ dialog::backdrop { background: rgba(0,0,0,.5); }
 
 /* Panel de administrador (oculto, solo en el equipo con el nombre secreto) */
 .tbl { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 8px 0; width: 100%; min-width: 0; }
-#panelAdmin table { width: 100%; min-width: 560px; border-collapse: collapse; margin: 0; font-size: .85em; }
+#panelAdmin table { width: 100%; min-width: 680px; border-collapse: collapse; margin: 0; font-size: .85em; }
 #panelAdmin th, #panelAdmin td { white-space: nowrap; }
 #panelAdmin th, #panelAdmin td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
 #panelAdmin .estado-activa { color: #1a7a34; font-weight: 600; }

@@ -105,9 +105,29 @@ export function iniciarPanelAdmin() {
           <td class="${claseEstado(l)}">${l.estado}</td>
           <td>${fechaAR(l.vence)}</td>
           <td>${l.diasRestantes ?? ''}</td>
-          <td><button type="button" class="btn pa-renovar" data-id="${escapar(l.id)}">+30 días</button></td>
+          <td>
+            <div style="display:flex;gap:4px;margin-bottom:4px">
+              <button type="button" class="btn pa-atajo" data-id="${escapar(l.id)}" data-dias="7">+7d</button>
+              <button type="button" class="btn pa-atajo" data-id="${escapar(l.id)}" data-dias="30">+30d</button>
+              <button type="button" class="btn pa-atajo" data-id="${escapar(l.id)}" data-dias="365">+1 año</button>
+            </div>
+            <div style="display:flex;gap:4px;align-items:center;margin-bottom:4px">
+              <input type="number" class="pa-dias" value="30" min="1" style="width:55px">
+              <button type="button" class="btn pa-renovar" data-id="${escapar(l.id)}">Renovar</button>
+            </div>
+            <div style="display:flex;gap:4px;align-items:center">
+              <input type="date" class="pa-fecha" value="${l.vence || ''}">
+              <button type="button" class="btn pa-fijar" data-id="${escapar(l.id)}">Fijar</button>
+            </div>
+          </td>
           <td>${botonVivo}</td>`;
-        tr.querySelector('.pa-renovar').onclick = (ev) => renovar(ev.target.dataset.id);
+        tr.querySelectorAll('.pa-atajo').forEach((b) => b.onclick = (ev) => renovar(ev.target.dataset.id, Number(ev.target.dataset.dias)));
+        tr.querySelector('.pa-renovar').onclick = (ev) => renovar(ev.target.dataset.id, Number(tr.querySelector('.pa-dias').value) || 30);
+        tr.querySelector('.pa-fijar').onclick = (ev) => {
+          const vence = tr.querySelector('.pa-fecha').value;
+          if (!vence) { msg('Elegí una fecha primero.', true); return; }
+          fijarFecha(ev.target.dataset.id, vence);
+        };
         tbody.appendChild(tr);
       }
       msg('Lista actualizada: ' + licencias.length + ' sistema(s).');
@@ -116,10 +136,20 @@ export function iniciarPanelAdmin() {
     }
   }
 
-  async function renovar(id) {
+  async function renovar(id, dias) {
     try {
-      await llamar(`/admin/api/licencias/${encodeURIComponent(id)}/renovar`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dias: 30 }) });
-      msg('Renovado 30 días: ' + id);
+      await llamar(`/admin/api/licencias/${encodeURIComponent(id)}/renovar`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dias }) });
+      msg(`Renovado ${dias} día(s): ` + id);
+      cargar();
+    } catch (e) {
+      msg('Error: ' + e.message, true);
+    }
+  }
+
+  async function fijarFecha(id, vence) {
+    try {
+      await llamar(`/admin/api/licencias/${encodeURIComponent(id)}/vencimiento`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ vence }) });
+      msg(`Vencimiento fijado al ${fechaAR(vence)}: ` + id);
       cargar();
     } catch (e) {
       msg('Error: ' + e.message, true);
