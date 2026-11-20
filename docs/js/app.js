@@ -2,7 +2,7 @@ import { evaluateFrame, P } from './rules.js';
 import { PeopleTracker, assignHands, poseBox } from './people.js';
 import { setupInstallButton } from './install.js';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
-import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo } from './licencia.js';
+import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo } from './licencia.js';
 import { iniciarPanelAdmin } from './admin-panel.js';
 
 const $ = (id) => document.getElementById(id);
@@ -351,6 +351,8 @@ function liveShareId() {
   return id;
 }
 
+let latidoPresencia = null;
+
 function openLivePeer(id) {
   livePeer = new Peer(id);
   livePeer.on('open', async () => {
@@ -363,6 +365,11 @@ function openLivePeer(id) {
     } catch (e) {
       addLog(`No se pudo mandar el link por Telegram: ${e.message}`, 'alert');
     }
+    // Avisa al panel de administrador que este sistema está en vivo (se repite cada
+    // minuto mientras siga transmitiendo, para que el admin sepa si sigue activo).
+    reportarPresenciaEnVivo(id, deviceName());
+    if (latidoPresencia) clearInterval(latidoPresencia);
+    latidoPresencia = setInterval(() => reportarPresenciaEnVivo(id, deviceName()), 60 * 1000);
   });
   livePeer.on('call', async (call) => {
     activeCalls.forEach((c) => c.close());
@@ -426,6 +433,7 @@ function stopLiveShare() {
   livePeer?.destroy();
   livePeer = null;
   activeCalls = [];
+  if (latidoPresencia) { clearInterval(latidoPresencia); latidoPresencia = null; }
   liveMicStream?.getTracks().forEach((t) => t.stop());
   liveMicStream = null;
   if (liveAudioEl) { liveAudioEl.remove(); liveAudioEl = null; }

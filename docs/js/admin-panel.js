@@ -87,17 +87,26 @@ export function iniciarPanelAdmin() {
 
   async function cargar() {
     try {
-      const { licencias } = await llamar('/admin/api/licencias');
+      const [{ licencias }, { presencia }] = await Promise.all([
+        llamar('/admin/api/licencias'),
+        llamar('/admin/api/presencia').catch(() => ({ presencia: [] })),
+      ]);
+      const presenciaPorId = new Map(presencia.map((p) => [p.id, p]));
       const tbody = $('paTabla').querySelector('tbody');
       tbody.innerHTML = '';
       for (const l of licencias) {
+        const viva = presenciaPorId.get(l.id);
+        const botonVivo = viva
+          ? `<a class="btn" target="_blank" rel="noopener" href="ver.html?n=${encodeURIComponent(viva.deviceName || l.nombre)}#${encodeURIComponent(viva.peerId)}">🔴 Ver en vivo</a>`
+          : `<span class="muted" style="font-size:.8em">sin transmisión ahora</span>`;
         const tr = document.createElement('tr');
         tr.innerHTML = `
           <td>${escapar(l.nombre)}</td>
           <td class="${claseEstado(l)}">${l.estado}</td>
           <td>${fechaAR(l.vence)}</td>
           <td>${l.diasRestantes ?? ''}</td>
-          <td><button type="button" class="btn pa-renovar" data-id="${escapar(l.id)}">+30 días</button></td>`;
+          <td><button type="button" class="btn pa-renovar" data-id="${escapar(l.id)}">+30 días</button></td>
+          <td>${botonVivo}</td>`;
         tr.querySelector('.pa-renovar').onclick = (ev) => renovar(ev.target.dataset.id);
         tbody.appendChild(tr);
       }
@@ -133,6 +142,11 @@ export function iniciarPanelAdmin() {
 
   $('paEntrar').addEventListener('click', login);
   $('paClave').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') login(); });
+  $('paClaveShowBtn').addEventListener('click', () => {
+    const verlo = $('paClave').type === 'password';
+    $('paClave').type = verlo ? 'text' : 'password';
+    $('paClaveShowBtn').textContent = verlo ? 'Ocultar' : 'Ver';
+  });
   $('paCrear').addEventListener('click', crear);
 
   const s = sesion();

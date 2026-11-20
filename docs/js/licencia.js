@@ -100,6 +100,28 @@ function actualizarCartel() {
   }
 }
 
+/** Avisa al servidor de licencias "estoy transmitiendo en vivo, este es mi enlace ahora".
+ *  Público pero acotado: solo sirve para ese id puntual, no deja ver nada que ya no se
+ *  pudiera ver con el enlace de Telegram de siempre. Pensado para que el panel de
+ *  administrador pueda listar "quién está en vivo ahora" sin buscar en cada grupo. */
+export async function reportarPresenciaEnVivo(peerId, nombreEquipo) {
+  const { baseUrl, id } = loadLicenciaConfig();
+  if (!baseUrl || !id) return;
+  try {
+    const ac = new AbortController();
+    const to = setTimeout(() => ac.abort(), 8000);
+    await fetch(`${baseUrl}/api/presencia/${encodeURIComponent(id)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ peerId, deviceName: nombreEquipo }),
+      signal: ac.signal,
+    });
+    clearTimeout(to);
+  } catch {
+    // Sin conexión: no importa, se reintenta en el próximo latido.
+  }
+}
+
 let intervalo = null;
 
 /** Arranca el chequeo periódico y muestra/oculta el cartel de bloqueo. Llamar una vez al cargar la app. */
