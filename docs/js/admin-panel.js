@@ -99,6 +99,17 @@ export function iniciarPanelAdmin() {
         llamar('/admin/api/presencia').catch(() => ({ presencia: [] })),
       ]);
       const presenciaPorId = new Map(presencia.map((p) => [p.id, p]));
+
+      const verVariosBtn = $('paVerVarios');
+      if (presencia.length >= 1) {
+        const lista = presencia.map((p) => ({ n: p.deviceName || p.id, p: p.peerId }));
+        const codificado = btoa(encodeURIComponent(JSON.stringify(lista)));
+        verVariosBtn.href = `multiver.html?lista=${codificado}`;
+        verVariosBtn.hidden = false;
+      } else {
+        verVariosBtn.hidden = true;
+      }
+
       const tbody = $('paTabla').querySelector('tbody');
       tbody.innerHTML = '';
       for (const l of licencias) {
