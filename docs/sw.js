@@ -4,7 +4,7 @@
 // - /api/* (alertas y cámara): siempre por red, nunca en caché.
 // Todo relativo a la propia carpeta del service worker, para que ande igual serví­do
 // en la raíz de un dominio o en una subcarpeta (por ejemplo GitHub Pages).
-const VERSION = 'detecmov-v21';
+const VERSION = 'detecmov-v22';
 const BASE = new URL('.', self.location.href); // ej.: https://host/ o https://host/detec-mov/
 const SHELL = [
   './', 'index.html', 'ver.html', 'manual.html', 'styles.css', 'manifest.webmanifest',

@@ -41,7 +41,14 @@ async function llamar(path, opts = {}) {
   if (!s) throw new Error('Iniciá sesión primero');
   const r = await fetch(BASE_URL + path, { ...opts, headers: { ...(opts.headers || {}), 'X-Admin-Session': s.token } });
   const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(data.error || ('Error ' + r.status));
+  if (!r.ok) {
+    if (r.status === 403) {
+      guardarSesion(null);
+      const caja = document.getElementById('paLoginBox');
+      if (caja) caja.hidden = false;
+    }
+    throw new Error(data.error || ('Error ' + r.status));
+  }
   return data;
 }
 
