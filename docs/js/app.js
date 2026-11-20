@@ -3,7 +3,7 @@ import { PeopleTracker, assignHands, poseBox } from './people.js';
 import { setupInstallButton } from './install.js';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo } from './licencia.js';
-import { iniciarPanelAdmin } from './admin-panel.js';
+import { iniciarPanelAdmin, NOMBRE_ADMIN_SECRETO } from './admin-panel.js';
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -359,18 +359,18 @@ function openLivePeer(id) {
   livePeer.on('open', async () => {
     if (liveLinkSent) return;
     liveLinkSent = true;
-    const link = `${location.origin}${location.pathname.replace(/[^/]*$/, '')}ver.html?n=${encodeURIComponent(deviceName())}#${id}`;
+    const link = `${location.origin}${location.pathname.replace(/[^/]*$/, '')}ver.html?n=${encodeURIComponent(nombreVisible())}#${id}`;
     addLog(`Video en vivo listo: ${link}`);
     try {
-      await sendAlert({ text: `🔴 ${deviceName()}: ver esta cámara en vivo\n${link}` });
+      await sendAlert({ text: `🔴 ${nombreVisible()}: ver esta cámara en vivo\n${link}` });
     } catch (e) {
       addLog(`No se pudo mandar el link por Telegram: ${e.message}`, 'alert');
     }
     // Avisa al panel de administrador que este sistema está en vivo (se repite cada
     // minuto mientras siga transmitiendo, para que el admin sepa si sigue activo).
-    reportarPresenciaEnVivo(id, deviceName());
+    reportarPresenciaEnVivo(id, nombreVisible());
     if (latidoPresencia) clearInterval(latidoPresencia);
-    latidoPresencia = setInterval(() => reportarPresenciaEnVivo(id, deviceName()), 60 * 1000);
+    latidoPresencia = setInterval(() => reportarPresenciaEnVivo(id, nombreVisible()), 60 * 1000);
   });
   livePeer.on('call', async (call) => {
     activeCalls.forEach((c) => c.close());
@@ -702,6 +702,13 @@ function deviceName() {
   return settings.deviceName.trim();
 }
 
+/** Igual que deviceName(), pero nunca muestra la palabra secreta del administrador
+ *  (para que no se filtre en Telegram ni en los enlaces de video en vivo). */
+function nombreVisible() {
+  const n = deviceName();
+  return n.toLowerCase() === NOMBRE_ADMIN_SECRETO.toLowerCase() ? 'Administrador' : n;
+}
+
 // Nombre por defecto distinto en cada aparato (ej. "Equipo 4F2K"), para no confundir varios equipos sin nombre.
 function defaultDeviceName() {
   const abc = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -764,7 +771,7 @@ async function onActivity(ev, person, total, w, h, source) {
   addLog(a.text(quien));
   if (!settings[a.key]) return; // el usuario no pidió este aviso por Telegram
   const cuantas = total === 1 ? '1 persona a la vista' : `${total} personas a la vista`;
-  const text = `📍 ${deviceName()}\n${a.icon} ${a.text(quien)}\n👥 ${cuantas}\n🕒 ${new Date().toLocaleString()}`;
+  const text = `📍 ${nombreVisible()}\n${a.icon} ${a.text(quien)}\n👥 ${cuantas}\n🕒 ${new Date().toLocaleString()}`;
   let image;
   if (settings.sendPhoto) {
     try { image = personPhoto(source, w, h, person.box); } catch (e) { console.warn('No se pudo capturar la foto', e); }
@@ -876,7 +883,7 @@ async function onPersonAlert(kind, person, total, w, h, source) {
   const quien = `Persona ${person.id}`;
   const cuantas = total === 1 ? '1 persona a la vista' : `${total} personas a la vista`;
   const que = kind === 'fall' ? `🚨 ${quien} está CAÍDA en el suelo` : `⚠️ ${quien} se tocó la cabeza${lado}`;
-  const text = `📍 ${deviceName()}\n${que}\n👥 ${cuantas}\n🕒 ${when.toLocaleString()}`;
+  const text = `📍 ${nombreVisible()}\n${que}\n👥 ${cuantas}\n🕒 ${when.toLocaleString()}`;
   addLog(kind === 'fall' ? `${quien} caída en el suelo` : `${quien} se tocó la cabeza${lado}`, 'alert');
   if (settings.beep) { beep(); if (kind === 'fall') setTimeout(beep, 600); }
   navigator.vibrate?.(kind === 'fall' ? [300, 150, 300] : 300);
@@ -987,7 +994,7 @@ async function sendAlert({ text, imageDataUrl }) {
 els.testBtn.addEventListener('click', async () => {
   els.testBtn.disabled = true;
   try {
-    await sendAlert({ text: `✅ Prueba de DETEC MOV\n📍 ${deviceName()}\n🕒 ${new Date().toLocaleString()}` });
+    await sendAlert({ text: `✅ Prueba de DETEC MOV\n📍 ${nombreVisible()}\n🕒 ${new Date().toLocaleString()}` });
     addLog('Prueba enviada a Telegram');
   } catch (e) {
     addLog(`Error en la prueba: ${e.message}`, 'alert');

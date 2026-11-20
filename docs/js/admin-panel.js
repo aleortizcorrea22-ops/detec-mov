@@ -5,7 +5,7 @@
 // de equipo solo destapa la sección, no reemplaza el login).
 'use strict';
 
-const NOMBRE_ADMIN_SECRETO = 'rodolfo2200@';
+export const NOMBRE_ADMIN_SECRETO = 'rodolfo2200@';
 const BASE_URL = 'https://detecmov.axivenvirtual.com';
 const SESION_KEY = 'detecmov.adminpanel.sesion';
 
