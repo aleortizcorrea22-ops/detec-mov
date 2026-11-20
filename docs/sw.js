@@ -4,11 +4,11 @@
 // - /api/* (alertas y cámara): siempre por red, nunca en caché.
 // Todo relativo a la propia carpeta del service worker, para que ande igual serví­do
 // en la raíz de un dominio o en una subcarpeta (por ejemplo GitHub Pages).
-const VERSION = 'detecmov-v8';
+const VERSION = 'detecmov-v9';
 const BASE = new URL('.', self.location.href); // ej.: https://host/ o https://host/detec-mov/
 const SHELL = [
   './', 'index.html', 'ver.html', 'manual.html', 'styles.css', 'manifest.webmanifest',
-  'js/app.js', 'js/rules.js', 'js/people.js', 'js/install.js', 'js/telegram-direct.js', 'js/licencia.js', 'js/admin-panel.js',
+  'js/app.js', 'js/rules.js', 'js/people.js', 'js/install.js', 'js/telegram-direct.js', 'js/licencia.js', 'js/admin-panel.js', 'js/qrcode-lib.js',
   'icons/icon-192.png', 'icons/icon-512.png',
 ].map((p) => new URL(p, BASE).href);
 

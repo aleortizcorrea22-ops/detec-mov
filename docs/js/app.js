@@ -1071,6 +1071,37 @@ setupInstallButton($('installBtn'), $('iosDialog'));
 iniciarChequeoLicencia();
 iniciarPanelAdmin();
 
+// ---------------------------------------------------------------------------
+// Compartir la aplicación (para instalarla en el celular de una familia nueva)
+
+(function iniciarCompartir() {
+  const URL_APP = 'https://aleortizcorrea22-ops.github.io/detec-mov/';
+  const btn = $('compartirBtn');
+  const fondo = $('compartirFondo');
+  if (!btn || !fondo) return;
+  btn.addEventListener('click', () => {
+    fondo.hidden = false;
+    const caja = $('compartirQr');
+    if (caja && !caja.dataset.listo && typeof qrcode !== 'undefined') {
+      const q = qrcode(0, 'M');
+      q.addData(URL_APP);
+      q.make();
+      caja.innerHTML = q.createSvgTag({ cellSize: 5, margin: 3 });
+      caja.dataset.listo = '1';
+    }
+  });
+  if (navigator.share) {
+    $('compartirNativoBtn').hidden = false;
+    $('compartirNativoBtn').addEventListener('click', () => {
+      navigator.share({ title: 'DETEC MOV', text: 'Instalá esta aplicación para avisarte por Telegram.', url: URL_APP }).catch(() => {});
+    });
+  }
+  $('compartirCopiarBtn').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(URL_APP); addLog('Enlace de la app copiado'); }
+    catch { /* el navegador no permite copiar: el texto ya está visible para seleccionar a mano */ }
+  });
+})();
+
 $('shutdownBtn').addEventListener('click', async () => {
   if (!confirm('¿Apagar DETEC MOV? Se va a detener la vigilancia, incluida la que corre en segundo plano. Para volver a usarla vas a tener que prender la PC de nuevo o abrir el acceso directo del escritorio.')) return;
   try {

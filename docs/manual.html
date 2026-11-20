@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Manual — DETEC MOV</title>
+<script src="js/qrcode-lib.js"></script>
 <style>
   :root { color-scheme: light; }
   * { box-sizing: border-box; }
@@ -63,6 +64,8 @@ Esta hoja te explica, paso a paso, cómo poner en funcionamiento un sistema que 
   <p><b class="num">2</b><b>Escribir esta dirección y entrar:</b></p>
   <div class="caja">aleortizcorrea22-ops.github.io/detec-mov</div>
   <p>Tocá donde dice la dirección de internet (arriba de la pantalla), escribí eso y después tocá la flecha o "Ir".</p>
+  <p style="text-align:center">O apuntá la <b>cámara del celular</b> a este cuadrado y tocá el aviso que aparece:</p>
+  <div id="qrApp" style="text-align:center;margin:10px 0"></div>
 </div>
 
 <div class="paso">
@@ -143,6 +146,12 @@ Esta hoja te explica, paso a paso, cómo poner en funcionamiento un sistema que 
 <footer>DETEC MOV</footer>
 
 <script>
+if (typeof qrcode !== 'undefined' && document.getElementById('qrApp')) {
+  var qApp = qrcode(0, 'M');
+  qApp.addData('https://aleortizcorrea22-ops.github.io/detec-mov/');
+  qApp.make();
+  document.getElementById('qrApp').innerHTML = qApp.createSvgTag({ cellSize: 6, margin: 2 });
+}
 function prepararManual() {
   var token = document.getElementById('inToken').value.trim();
   var chat = document.getElementById('inChat').value.trim();

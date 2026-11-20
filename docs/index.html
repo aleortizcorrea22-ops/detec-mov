@@ -14,6 +14,7 @@
   <meta name="apple-mobile-web-app-title" content="DETEC MOV">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="stylesheet" href="styles.css">
+  <script src="js/qrcode-lib.js"></script>
 </head>
 <body>
   <div id="licenciaBloqueo" class="licencia-bloqueo" hidden role="alertdialog" aria-live="assertive">
@@ -29,9 +30,24 @@
       <span>DETEC MOV</span>
     </div>
     <a href="manual.html" class="btn" target="_blank" rel="noopener">Manual para el usuario</a>
+    <button id="compartirBtn" class="btn" title="Mandar la aplicación a una familia nueva">📲 Compartir app</button>
     <button id="installBtn" class="btn btn-install" hidden>Instalar</button>
     <button id="shutdownBtn" class="btn btn-danger" title="Apaga el programa, incluida la vigilancia en segundo plano">Apagar sistema</button>
   </header>
+
+  <div id="compartirFondo" class="licencia-bloqueo" hidden onclick="if(event.target===this) document.getElementById('compartirFondo').hidden=true">
+    <div class="licencia-bloqueo-caja" style="max-width:320px;text-align:center">
+      <h2>📲 Compartir la aplicación</h2>
+      <p>Mandale este enlace a una familia nueva para que instale DETEC MOV, o que escaneen el código QR con la cámara del celular.</p>
+      <p style="font:700 14px ui-monospace,Consolas,monospace;word-break:break-all;background:var(--code-bg,#eee);color:#111;padding:8px;border-radius:6px">https://aleortizcorrea22-ops.github.io/detec-mov/</p>
+      <div id="compartirQr" style="margin:10px 0"></div>
+      <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+        <button type="button" id="compartirNativoBtn" class="btn" hidden>Compartir…</button>
+        <button type="button" id="compartirCopiarBtn" class="btn">Copiar enlace</button>
+        <button type="button" class="btn" onclick="document.getElementById('compartirFondo').hidden=true">Cerrar</button>
+      </div>
+    </div>
+  </div>
 
   <main>
     <section class="stage">
