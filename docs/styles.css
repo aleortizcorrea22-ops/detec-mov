@@ -96,3 +96,18 @@ dialog::backdrop { background: rgba(0,0,0,.5); }
 
 /* Marcar la cama: se arrastra sobre la imagen */
 .viewer.marking { cursor: crosshair; touch-action: none; outline: 3px dashed #facc15; outline-offset: -3px; }
+
+/* Cartel de pantalla completa cuando el servicio está bloqueado (licencia vencida) */
+.licencia-bloqueo {
+  position: fixed; inset: 0; z-index: 9999;
+  background: rgba(10, 10, 15, .96);
+  display: flex; align-items: center; justify-content: center;
+  padding: 1.5rem;
+}
+.licencia-bloqueo-caja {
+  max-width: 420px; text-align: center; color: #fff;
+  background: #1c1c24; border: 1px solid #3a3a46; border-radius: 16px;
+  padding: 2rem 1.5rem;
+}
+.licencia-bloqueo-caja h2 { margin: 0 0 .75rem; font-size: 1.3rem; }
+.licencia-bloqueo-caja p { margin: 0; font-size: 1rem; line-height: 1.4; color: #d7d7df; }

@@ -2,6 +2,7 @@ import { evaluateFrame, P } from './rules.js';
 import { PeopleTracker, assignHands, poseBox } from './people.js';
 import { setupInstallButton } from './install.js';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
+import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo } from './licencia.js';
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -953,6 +954,8 @@ els.saveDirectBtn.addEventListener('click', () => {
 });
 
 async function sendAlert({ text, imageDataUrl }) {
+  const acceso = accesoActual();
+  if (!acceso.permitido) throw new Error(mensajeBloqueo(acceso.motivo));
   if (hasBackend) {
     const r = await fetch('/api/alert', {
       method: 'POST',
@@ -997,6 +1000,12 @@ els.findChatBtn.addEventListener('click', async () => {
 // Iniciar / detener
 
 els.startBtn.addEventListener('click', async (ev) => {
+  const acceso = accesoActual();
+  if (!acceso.permitido) {
+    setStatus('alert', mensajeBloqueo(acceso.motivo));
+    addLog(mensajeBloqueo(acceso.motivo), 'alert');
+    return;
+  }
   // La primera vez que alguien toca Iniciar, se pide el nombre del equipo (en modo automático no se pregunta).
   if (ev.isTrusted && !settings.deviceNameAsked) {
     const n = prompt('¿Cómo se llama este equipo? Así aparece en cada aviso de Telegram.\n(Por ejemplo: Equipo 1 · Dormitorio)', deviceName());
@@ -1053,6 +1062,7 @@ bindSettings();
 refreshTelegramStatus();
 listDevices().catch(() => {});
 setupInstallButton($('installBtn'), $('iosDialog'));
+iniciarChequeoLicencia();
 
 $('shutdownBtn').addEventListener('click', async () => {
   if (!confirm('¿Apagar DETEC MOV? Se va a detener la vigilancia, incluida la que corre en segundo plano. Para volver a usarla vas a tener que prender la PC de nuevo o abrir el acceso directo del escritorio.')) return;
