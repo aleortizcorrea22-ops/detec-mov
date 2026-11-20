@@ -26,6 +26,7 @@
 </head>
 <body>
   <header>
+    <strong id="equipo" style="font-size:18px;margin-right:6px"></strong>
     <span id="dot" class="dot"></span>
     <span id="status">Conectando…</span>
   </header>
@@ -46,6 +47,8 @@
     const sonidoBtn = document.getElementById('sonidoBtn');
     const hablarBtn = document.getElementById('hablarBtn');
     const remoteId = location.hash.slice(1);
+    const equipo = new URLSearchParams(location.search).get('n');
+    if (equipo) { document.getElementById('equipo').textContent = `📍 ${equipo}`; document.title = `${equipo} · Ver en vivo`; }
 
     function setStatus(text, live) {
       status.textContent = text;

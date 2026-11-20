@@ -44,6 +44,12 @@
     </section>
 
     <section class="panel">
+      <h2>Este equipo</h2>
+      <label class="field">
+        <span>Nombre de este equipo (aparece en cada aviso de Telegram)</span>
+        <input id="deviceName" type="text" maxlength="40" autocomplete="off" placeholder="Ej.: Equipo 1 · Dormitorio de la abuela">
+      </label>
+
       <h2>Cámara</h2>
       <label class="field">
         <span>Fuente</span>
@@ -96,6 +102,31 @@
         </select>
       </label>
       <label class="check"><input id="includeFace" type="checkbox"> Contar también tocarse la cara (ojos, nariz, mejillas, boca, mentón)</label>
+      <label class="field">
+        <span>Cuántas personas puede seguir a la vez (más = más lento)</span>
+        <input id="maxPeople" type="number" min="1" max="6" step="1" inputmode="numeric">
+      </label>
+      <label class="check"><input id="detectFalls" type="checkbox"> Detectar si una persona está caída en el suelo</label>
+      <label class="field" id="fallHoldField">
+        <span>Tiempo en el suelo antes de avisar: <b id="fallVal"></b></span>
+        <input id="fallHoldS" type="range" min="1" max="15" step="1">
+      </label>
+
+      <h2>Camas</h2>
+      <p id="bedInfo" class="muted"></p>
+      <div class="row">
+        <button id="bedMarkBtn" class="btn" type="button">🛏️ Marcar una cama</button>
+        <button id="bedClearBtn" class="btn" type="button">Borrar camas</button>
+      </div>
+
+      <h2>Otros avisos (opcionales)</h2>
+      <p class="muted">Siempre se anotan en Eventos. Marque cuáles quiere recibir también por Telegram:</p>
+      <label class="check"><input id="alertSento" type="checkbox"> 🪑 Se sentó en una silla o sillón</label>
+      <label class="check"><input id="alertLevanto" type="checkbox"> 🧍 Se levantó de la silla o sillón</label>
+      <label class="check"><input id="alertCamaEntra" type="checkbox"> 🛏️ Se acostó en la cama</label>
+      <label class="check"><input id="alertCamaSale" type="checkbox"> 🛏️ Se levantó de la cama</label>
+      <label class="check"><input id="alertCamina" type="checkbox"> 🚶 Empezó a caminar</label>
+      <label class="check"><input id="alertQuieta" type="checkbox"> ⏸️ Dejó de caminar y se quedó quieta</label>
       <label class="check"><input id="useHands" type="checkbox"> Detectar también los dedos de la mano (más preciso de cerca)</label>
       <label class="check"><input id="sendPhoto" type="checkbox"> Enviar foto con la alerta</label>
       <label class="check"><input id="beep" type="checkbox"> Sonido en este equipo al detectar</label>

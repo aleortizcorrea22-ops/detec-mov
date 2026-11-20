@@ -1,4 +1,5 @@
-import { evaluateFrame, TouchTracker, P } from './rules.js';
+import { evaluateFrame, P } from './rules.js';
+import { PeopleTracker, assignHands, poseBox } from './people.js';
 import { setupInstallButton } from './install.js';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 
@@ -13,6 +14,10 @@ const els = {
   sendPhoto: $('sendPhoto'), beep: $('beep'), drawSkeleton: $('drawSkeleton'), mirror: $('mirror'), viewer: $('viewer'), shareLive: $('shareLive'), liveWebrtc: $('liveWebrtc'), liveAudioRow: $('liveAudioRow'), liveMicBtn: $('liveMicBtn'), liveSoundBtn: $('liveSoundBtn'),
   tgStatus: $('tgStatus'), testBtn: $('testBtn'), findChatBtn: $('findChatBtn'), chatList: $('chatList'), log: $('log'),
   directTelegramFields: $('directTelegramFields'), directToken: $('directToken'), directChatIds: $('directChatIds'), saveDirectBtn: $('saveDirectBtn'),
+  deviceName: $('deviceName'), maxPeople: $('maxPeople'), detectFalls: $('detectFalls'), fallHoldS: $('fallHoldS'),
+  fallVal: $('fallVal'), fallHoldField: $('fallHoldField'),
+  alertSento: $('alertSento'), alertLevanto: $('alertLevanto'), alertCamaEntra: $('alertCamaEntra'), alertCamaSale: $('alertCamaSale'),
+  alertCamina: $('alertCamina'), alertQuieta: $('alertQuieta'), bedMarkBtn: $('bedMarkBtn'), bedClearBtn: $('bedClearBtn'), bedInfo: $('bedInfo'),
 };
 
 // ---------------------------------------------------------------------------
@@ -21,6 +26,10 @@ const els = {
 const DEFAULTS = {
   sourceType: 'device', deviceId: '', cameraUrl: '', sensitivity: 1, holdMs: 600, cooldownS: 30,
   model: 'full', includeFace: false, useHands: true, sendPhoto: true, beep: true, drawSkeleton: true, mirror: false, shareLive: false, liveWebrtc: false, liveMicMuted: false, liveSoundMuted: false,
+  deviceName: '', deviceNameAsked: false, maxPeople: 3, detectFalls: true, fallHoldS: 3,
+  // Actividades: siempre se anotan en Eventos; a Telegram solo si se activa cada una.
+  alertSento: false, alertLevanto: false, alertCamaEntra: false, alertCamaSale: false, alertCamina: false, alertQuieta: false,
+  bedZones: [],
 };
 const settings = { ...DEFAULTS, ...readSettings() };
 
@@ -38,7 +47,10 @@ function bindSettings() {
   els.holdMs.value = settings.holdMs;
   els.cooldownS.value = settings.cooldownS;
   els.model.value = settings.model;
-  for (const k of ['includeFace', 'useHands', 'sendPhoto', 'beep', 'drawSkeleton', 'mirror', 'shareLive', 'liveWebrtc']) els[k].checked = settings[k];
+  for (const k of ['includeFace', 'useHands', 'sendPhoto', 'beep', 'drawSkeleton', 'mirror', 'shareLive', 'liveWebrtc', 'detectFalls', ...ACTIVITY_KEYS]) els[k].checked = settings[k];
+  els.deviceName.value = deviceName();
+  els.maxPeople.value = settings.maxPeople;
+  els.fallHoldS.value = settings.fallHoldS;
 
   const refresh = () => {
     els.sensVal.textContent = `${Math.round(settings.sensitivity * 100)}%`;
@@ -47,8 +59,12 @@ function bindSettings() {
     const ip = settings.sourceType !== 'device';
     els.urlField.hidden = !ip;
     els.deviceField.hidden = ip;
-    tracker.holdMs = settings.holdMs;
-    tracker.cooldownMs = settings.cooldownS * 1000;
+    els.fallVal.textContent = `${settings.fallHoldS} s`;
+    els.fallHoldField.hidden = !settings.detectFalls;
+    people.configure({
+      touch: { holdMs: settings.holdMs, cooldownMs: settings.cooldownS * 1000 },
+      fall: { holdMs: settings.fallHoldS * 1000, cooldownMs: Math.max(60000, settings.cooldownS * 1000) },
+    });
     els.viewer.classList.toggle('mirrored', settings.mirror);
     els.liveAudioRow.hidden = !settings.liveWebrtc;
     els.liveMicBtn.hidden = !settings.liveWebrtc;
@@ -74,6 +90,23 @@ function bindSettings() {
   on(els.mirror, 'mirror');
   on(els.shareLive, 'shareLive');
   on(els.liveWebrtc, 'liveWebrtc');
+  on(els.detectFalls, 'detectFalls');
+  for (const k of ACTIVITY_KEYS) on(els[k], k);
+  setupBedZones();
+  on(els.fallHoldS, 'fallHoldS', Number);
+  on(els.deviceName, 'deviceName', (v) => v.slice(0, 40));
+  els.deviceName.addEventListener('input', () => { settings.deviceNameAsked = true; saveSettings(); });
+  // Cantidad de personas: hay que recargar el modelo de pose para que tome el cambio.
+  els.maxPeople.addEventListener('change', async () => {
+    settings.maxPeople = Math.min(6, Math.max(1, Number(els.maxPeople.value) || 1));
+    els.maxPeople.value = settings.maxPeople;
+    saveSettings();
+    if (poseLandmarker) {
+      poseLandmarker.close(); poseLandmarker = null;
+      handLandmarker?.close(); handLandmarker = null;
+      await loadModels();
+    }
+  });
   els.liveMicBtn.addEventListener('click', () => {
     if (!settings.liveMicMuted) {
       if (!confirm('¿Seguro que querés silenciar el micrófono? Quien mire en vivo no va a poder hablar.')) return;
@@ -168,7 +201,7 @@ async function loadModels() {
     poseLandmarker = await createWithFallback(mp.PoseLandmarker, {
       baseOptions: { modelAssetPath: modelUrl(MODEL_URLS[settings.model] ? settings.model : 'full') },
       runningMode: 'VIDEO',
-      numPoses: 1,
+      numPoses: Math.min(6, Math.max(1, Number(settings.maxPeople) || 1)),
       minPoseDetectionConfidence: 0.4,
       minPosePresenceConfidence: 0.4,
       minTrackingConfidence: 0.4,
@@ -178,7 +211,7 @@ async function loadModels() {
     handLandmarker = await createWithFallback(mp.HandLandmarker, {
       baseOptions: { modelAssetPath: modelUrl('hand') },
       runningMode: 'VIDEO',
-      numHands: 2,
+      numHands: Math.min(6, 2 * Math.max(1, Number(settings.maxPeople) || 1)),
       minHandDetectionConfidence: 0.4,
       minHandPresenceConfidence: 0.4,
       minTrackingConfidence: 0.4,
@@ -314,10 +347,10 @@ function openLivePeer(id) {
   livePeer.on('open', async () => {
     if (liveLinkSent) return;
     liveLinkSent = true;
-    const link = `${location.origin}${location.pathname.replace(/[^/]*$/, '')}ver.html#${id}`;
+    const link = `${location.origin}${location.pathname.replace(/[^/]*$/, '')}ver.html?n=${encodeURIComponent(deviceName())}#${id}`;
     addLog(`Video en vivo listo: ${link}`);
     try {
-      await sendAlert({ text: `🔴 Ver esta cámara en vivo:\n${link}` });
+      await sendAlert({ text: `🔴 ${deviceName()}: ver esta cámara en vivo\n${link}` });
     } catch (e) {
       addLog(`No se pudo mandar el link por Telegram: ${e.message}`, 'alert');
     }
@@ -418,7 +451,11 @@ function currentFrame() {
 // ---------------------------------------------------------------------------
 // Bucle de detección
 
-const tracker = new TouchTracker({ holdMs: settings.holdMs, cooldownMs: settings.cooldownS * 1000 });
+// Cada persona tiene su número (Persona 1, 2…) y sus propias alertas de "mano en la cabeza" y "caída".
+const people = new PeopleTracker({
+  touch: { holdMs: settings.holdMs, cooldownMs: settings.cooldownS * 1000 },
+  fall: { holdMs: settings.fallHoldS * 1000, cooldownMs: Math.max(60000, settings.cooldownS * 1000) },
+});
 const octx = els.overlay.getContext('2d');
 let lastTs = 0;
 let frames = 0;
@@ -426,7 +463,11 @@ let fpsT0 = performance.now();
 let wakeLock = null;
 let lastNoPerson = 0;
 
+let loopRaf = 0;
+let loopTimer = 0;
 function loop() {
+  cancelAnimationFrame(loopRaf);
+  clearTimeout(loopTimer);
   if (!running) return;
   try {
     const frame = currentFrame();
@@ -434,9 +475,14 @@ function loop() {
   } catch (e) {
     console.error(e);
   }
-  // Con la app en segundo plano requestAnimationFrame se pausa; seguimos con un temporizador.
-  if (document.hidden) setTimeout(loop, 250);
-  else requestAnimationFrame(loop);
+  // Con la app en segundo plano (o la ventana tapada) requestAnimationFrame se pausa:
+  // por las dudas también hay un temporizador, así nunca se queda quieta.
+  if (document.hidden) {
+    loopTimer = setTimeout(loop, 250);
+  } else {
+    loopRaf = requestAnimationFrame(loop);
+    loopTimer = setTimeout(loop, 400);
+  }
 }
 
 function processFrame({ source, w, h }) {
@@ -445,24 +491,45 @@ function processFrame({ source, w, h }) {
   lastTs = ts;
 
   const poseRes = poseLandmarker.detectForVideo(source, ts);
-  const pose = poseRes.landmarks?.[0] || null;
-  const handRes = settings.useHands && pose ? handLandmarker.detectForVideo(source, ts) : null;
+  const poses = poseRes.landmarks || [];
+  const handRes = settings.useHands && poses.length ? handLandmarker.detectForVideo(source, ts) : null;
   const hands = handRes?.landmarks || [];
-
-  const res = evaluateFrame(pose, hands, w, h, { sensitivity: settings.sensitivity, includeFace: settings.includeFace });
+  const handsByPose = assignHands(poses, hands, w, h);
   const now = Date.now();
-  const state = tracker.update(res.touching, now);
 
-  draw(w, h, pose, hands, res, state);
+  // Evalúa a cada persona por separado.
+  const list = people.update(poses, w, h, now).map((p) => {
+    const pose = poses[p.index];
+    const res = evaluateFrame(pose, handsByPose[p.index], w, h, { sensitivity: settings.sensitivity, includeFace: settings.includeFace });
+    const touchState = p.track.touch.update(res.touching, now);
+    const act = p.track.act.update(pose, w, h, now, { bedZones: settings.bedZones });
+    // Acostada en una zona marcada como cama no es una caída.
+    const lying = settings.detectFalls && act.lyingNow && !act.inBed;
+    const fallState = settings.detectFalls ? p.track.fall.update(lying, now) : 'idle';
+    return { id: p.id, track: p.track, pose, hands: handsByPose[p.index], res, touchState, lying, fallState, box: poseBox(pose, w, h),
+      posture: act.posture, walking: act.walking, inBed: act.lyingNow && act.inBed, events: act.events };
+  });
+
+  drawAll(w, h, list);
   if (settings.shareLive) sendLiveFrame(source, w, h, now);
 
-  if (state === 'alert') onTouchAlert(res, w, h, source);
-  if (!pose) {
-    if (now - lastNoPerson > 1000) { setStatus('warn', 'Buscando a la persona…'); lastNoPerson = now; }
-  } else if (res.touching) {
-    setStatus('alert', state === 'cooldown' ? 'Mano en la cabeza (esperando para volver a alertar)' : 'Mano en la cabeza');
+  for (const person of list) {
+    if (person.fallState === 'alert') onPersonAlert('fall', person, list.length, w, h, source);
+    if (person.touchState === 'alert') onPersonAlert('touch', person, list.length, w, h, source);
+    for (const ev of person.events) onActivity(ev, person, list.length, w, h, source);
+  }
+
+  const cuantas = list.length === 1 ? '1 persona' : `${list.length} personas`;
+  const fallen = list.filter((p) => p.lying);
+  const touching = list.filter((p) => p.res.touching);
+  if (!list.length) {
+    if (now - lastNoPerson > 1000) { setStatus('warn', 'Buscando personas…'); lastNoPerson = now; }
+  } else if (fallen.length) {
+    setStatus('alert', `${fallen.map((p) => `Persona ${p.id}`).join(', ')} en el suelo · ${cuantas}`);
+  } else if (touching.length) {
+    setStatus('alert', `${touching.map((p) => `Persona ${p.id}`).join(', ')}: mano en la cabeza · ${cuantas}`);
   } else {
-    setStatus('ok', 'Vigilando');
+    setStatus('ok', `Vigilando · ${cuantas}`);
   }
 
   frames++;
@@ -520,35 +587,68 @@ function drawDots(points, idx, w, h, color, r, check = seen) {
   }
 }
 
-function draw(w, h, pose, hands, res, state) {
+// Colores para distinguir a cada persona en pantalla.
+const PERSON_COLORS = ['#22d3ee', '#a78bfa', '#f472b6', '#4ade80', '#fb923c', '#facc15'];
+
+function drawAll(w, h, list) {
   const c = els.overlay;
   if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
   octx.clearRect(0, 0, w, h);
+  drawBedZones(w, h);
+  for (const person of list) drawPerson(w, h, person);
+  const fallen = list.find((p) => p.lying);
+  const touching = list.find((p) => p.res.touching);
+  const banner = fallen ? `🚨 Persona ${fallen.id} en el suelo` : touching ? `⚠️ Persona ${touching.id} se tocó la cabeza` : '';
+  if (els.banner.textContent !== banner) els.banner.textContent = banner;
+  els.banner.hidden = !banner;
+}
+
+function drawPerson(w, h, { id, pose, hands, res, lying, box, posture, walking, inBed }) {
   const lw = Math.max(2, w / 400);
-  const alerting = res.touching;
+  const alerting = res.touching || lying;
+  const color = PERSON_COLORS[(id - 1) % PERSON_COLORS.length];
+
+  // Etiqueta "Persona N" arriba de cada uno (más grande y en rojo si está alertando).
+  if (box) {
+    const estado = inBed ? 'en la cama' : walking ? 'caminando' : posture === 'sentada' ? 'sentada' : posture === 'parada' ? 'parada' : '';
+    const label = lying ? `Persona ${id} · EN EL SUELO` : res.touching ? `Persona ${id} · CABEZA` : estado ? `Persona ${id} · ${estado}` : `Persona ${id}`;
+    const fs = Math.max(14, Math.round(w / 45));
+    octx.font = `bold ${fs}px system-ui, sans-serif`;
+    const tw = octx.measureText(label).width + fs;
+    const lx = Math.max(0, Math.min(w - tw, box.x));
+    const ly = Math.max(0, box.y - fs * 1.6);
+    octx.fillStyle = alerting ? 'rgba(220,38,38,.92)' : 'rgba(0,0,0,.65)';
+    octx.fillRect(lx, ly, tw, fs * 1.5);
+    octx.fillStyle = alerting ? '#fff' : color;
+    octx.fillText(label, lx + fs / 2, ly + fs * 1.1);
+    if (lying) {
+      octx.strokeStyle = 'rgba(220,38,38,.95)';
+      octx.lineWidth = lw * 2;
+      octx.strokeRect(box.x, box.y, box.w, box.h);
+    }
+  }
 
   if (res.zone) {
     octx.beginPath();
     octx.arc(res.zone.center.x, res.zone.center.y, res.zone.radius, 0, Math.PI * 2);
     octx.lineWidth = lw * 1.5;
-    octx.strokeStyle = alerting ? 'rgba(220,38,38,.95)' : 'rgba(20,184,166,.9)';
-    octx.fillStyle = alerting ? 'rgba(220,38,38,.18)' : 'rgba(20,184,166,.08)';
+    octx.strokeStyle = res.touching ? 'rgba(220,38,38,.95)' : 'rgba(20,184,166,.9)';
+    octx.fillStyle = res.touching ? 'rgba(220,38,38,.18)' : 'rgba(20,184,166,.08)';
     octx.fill();
     octx.stroke();
   }
 
   if (settings.drawSkeleton && pose) {
     const all = [...Array(33).keys()];
-    drawLines(pose, BODY_CONNECTIONS, w, h, 'rgba(255,255,255,.85)', lw * 1.5);
-    drawLines(pose, ARM_CONNECTIONS, w, h, alerting ? '#f87171' : '#facc15', lw * 2.5);
+    drawLines(pose, BODY_CONNECTIONS, w, h, lying ? '#f87171' : 'rgba(255,255,255,.85)', lw * 1.5);
+    drawLines(pose, ARM_CONNECTIONS, w, h, alerting ? '#f87171' : color, lw * 2.5);
     drawDots(pose, all, w, h, 'rgba(255,255,255,.95)', lw * 1.8);
-    drawDots(pose, ARM_POINTS, w, h, alerting ? '#dc2626' : '#f59e0b', lw * 3);
-    for (const hand of hands) {
+    drawDots(pose, ARM_POINTS, w, h, alerting ? '#dc2626' : color, lw * 3);
+    for (const hand of hands || []) {
       drawLines(hand, HAND_CONNECTIONS, w, h, '#38bdf8', lw * 1.5, Boolean);
       drawDots(hand, hand.map((_, i) => i), w, h, '#0ea5e9', lw * 1.6, Boolean);
     }
   }
-  els.banner.hidden = !(alerting && (tracker.alertedThisTouch || state === 'cooldown'));
 }
 
 // ---------------------------------------------------------------------------
@@ -578,28 +678,194 @@ function sendLiveFrame(source, w, h, now) {
 // ---------------------------------------------------------------------------
 // Alertas
 
-async function onTouchAlert(res, w, h, source) {
+/** Nombre de este equipo, para que en Telegram se sepa de dónde viene cada aviso. */
+function deviceName() {
+  if (!(settings.deviceName || '').trim()) { settings.deviceName = defaultDeviceName(); saveSettings(); if (els.deviceName) els.deviceName.value = settings.deviceName; }
+  return settings.deviceName.trim();
+}
+
+// Nombre por defecto distinto en cada aparato (ej. "Equipo 4F2K"), para no confundir varios equipos sin nombre.
+function defaultDeviceName() {
+  const abc = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const code = Array.from(crypto.getRandomValues(new Uint8Array(4)), (b) => abc[b % abc.length]).join('');
+  return `Equipo ${code}`;
+}
+
+/**
+ * Foto de UNA persona: recorte alrededor de ella (con margen), con el esqueleto dibujado,
+ * para que en Telegram se vea claro quién fue.
+ */
+function personPhoto(source, w, h, box) {
+  const snap = document.createElement('canvas');
+  let sx = 0; let sy = 0; let sw = w; let sh = h;
+  if (box) {
+    const m = 0.35;
+    sx = Math.max(0, box.x - box.w * m);
+    sy = Math.max(0, box.y - box.h * m - box.h * 0.15); // un poco más arriba: la cabeza y la etiqueta
+    sw = Math.min(w - sx, box.w * (1 + 2 * m));
+    sh = Math.min(h - sy, box.h * (1 + 2 * m) + box.h * 0.15);
+    // que no quede un recorte diminuto si la persona está lejos
+    const minW = w * 0.35;
+    const minH = h * 0.35;
+    if (sw < minW) { sx = Math.max(0, Math.min(w - minW, sx - (minW - sw) / 2)); sw = Math.min(w, minW); }
+    if (sh < minH) { sy = Math.max(0, Math.min(h - minH, sy - (minH - sh) / 2)); sh = Math.min(h, minH); }
+  }
+  const scale = Math.min(2, 960 / Math.max(sw, sh));
+  snap.width = Math.round(sw * scale);
+  snap.height = Math.round(sh * scale);
+  const c = snap.getContext('2d');
+  c.drawImage(source, sx, sy, sw, sh, 0, 0, snap.width, snap.height);
+  c.drawImage(els.overlay, sx, sy, sw, sh, 0, 0, snap.width, snap.height);
+  return snap.toDataURL('image/jpeg', 0.85);
+}
+
+// ---------------------------------------------------------------------------
+// Actividades opcionales: se sentó, se levantó, cama, caminar, quieta.
+// Siempre quedan en "Eventos"; a Telegram solo si está marcada su casilla.
+
+const ACTIVITY_KEYS = ['alertSento', 'alertLevanto', 'alertCamaEntra', 'alertCamaSale', 'alertCamina', 'alertQuieta'];
+const ACTIVITIES = {
+  sento: { key: 'alertSento', icon: '🪑', text: (q) => `${q} se sentó (silla o sillón)` },
+  levanto: { key: 'alertLevanto', icon: '🧍', text: (q) => `${q} se levantó de la silla o sillón` },
+  cama_entra: { key: 'alertCamaEntra', icon: '🛏️', text: (q) => `${q} se acostó en la cama` },
+  cama_sale: { key: 'alertCamaSale', icon: '🛏️', text: (q) => `${q} se levantó de la cama` },
+  camina: { key: 'alertCamina', icon: '🚶', text: (q) => `${q} empezó a caminar` },
+  quieta: { key: 'alertQuieta', icon: '⏸️', text: (q) => `${q} dejó de caminar y se quedó quieta` },
+};
+
+async function onActivity(ev, person, total, w, h, source) {
+  const a = ACTIVITIES[ev];
+  if (!a) return;
+  // No repetir el mismo aviso de la misma persona en menos de 20 s.
+  const now = Date.now();
+  person.track.lastEv ??= {};
+  if (now - (person.track.lastEv[ev] || 0) < 20000) return;
+  person.track.lastEv[ev] = now;
+
+  const quien = `Persona ${person.id}`;
+  addLog(a.text(quien));
+  if (!settings[a.key]) return; // el usuario no pidió este aviso por Telegram
+  const cuantas = total === 1 ? '1 persona a la vista' : `${total} personas a la vista`;
+  const text = `📍 ${deviceName()}\n${a.icon} ${a.text(quien)}\n👥 ${cuantas}\n🕒 ${new Date().toLocaleString()}`;
+  let image;
+  if (settings.sendPhoto) {
+    try { image = personPhoto(source, w, h, person.box); } catch (e) { console.warn('No se pudo capturar la foto', e); }
+  }
+  try {
+    await sendAlert({ text, imageDataUrl: image });
+    addLog('Aviso enviado por Telegram');
+  } catch (e) {
+    addLog(`No se pudo enviar a Telegram: ${e.message}`, 'alert');
+  }
+}
+
+// --- Zonas de cama: se marcan arrastrando el dedo o el mouse sobre la imagen ---
+let bedMarking = false;
+let bedDraft = null;
+
+/** Pasa un punto de la pantalla a coordenadas 0..1 de la imagen (la imagen está centrada, con bordes negros). */
+function toImageCoords(ev) {
+  const c = els.overlay;
+  const r = c.getBoundingClientRect();
+  if (!c.width || !c.height || !r.width) return null;
+  const scale = Math.min(r.width / c.width, r.height / c.height);
+  const ox = (r.width - c.width * scale) / 2;
+  const oy = (r.height - c.height * scale) / 2;
+  let x = (ev.clientX - r.left - ox) / (c.width * scale);
+  const y = (ev.clientY - r.top - oy) / (c.height * scale);
+  if (settings.mirror) x = 1 - x; // si la imagen se ve en espejo
+  return { x: Math.min(1, Math.max(0, x)), y: Math.min(1, Math.max(0, y)) };
+}
+
+function refreshBedInfo() {
+  const n = settings.bedZones.length;
+  els.bedInfo.textContent = bedMarking
+    ? 'Arrastre el dedo sobre la imagen, de una esquina de la cama a la otra.'
+    : n ? `${n} cama${n > 1 ? 's' : ''} marcada${n > 1 ? 's' : ''}. Acostada ahí = "en la cama" (no es caída).` : 'No hay camas marcadas: si alguien se acuesta, se toma como caída.';
+  els.bedClearBtn.disabled = !n;
+  els.bedMarkBtn.textContent = bedMarking ? 'Cancelar' : '🛏️ Marcar una cama';
+}
+
+function setupBedZones() {
+  if (!Array.isArray(settings.bedZones)) settings.bedZones = [];
+  const viewer = els.overlay.parentElement;
+  els.bedMarkBtn.addEventListener('click', () => {
+    if (!bedMarking && !running) { addLog('Primero toque Iniciar para ver la imagen y después marque la cama.', 'alert'); return; }
+    bedMarking = !bedMarking;
+    bedDraft = null;
+    viewer.classList.toggle('marking', bedMarking);
+    refreshBedInfo();
+  });
+  els.bedClearBtn.addEventListener('click', () => {
+    if (!confirm('¿Borrar todas las camas marcadas?')) return;
+    settings.bedZones = [];
+    saveSettings();
+    refreshBedInfo();
+  });
+  viewer.addEventListener('pointerdown', (ev) => {
+    if (!bedMarking) return;
+    const p = toImageCoords(ev);
+    if (!p) return;
+    ev.preventDefault();
+    viewer.setPointerCapture?.(ev.pointerId);
+    bedDraft = { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
+  });
+  viewer.addEventListener('pointermove', (ev) => {
+    if (!bedMarking || !bedDraft) return;
+    const p = toImageCoords(ev);
+    if (p) { bedDraft.x1 = p.x; bedDraft.y1 = p.y; }
+  });
+  const finish = () => {
+    if (!bedMarking || !bedDraft) return;
+    const z = { x: Math.min(bedDraft.x0, bedDraft.x1), y: Math.min(bedDraft.y0, bedDraft.y1), w: Math.abs(bedDraft.x1 - bedDraft.x0), h: Math.abs(bedDraft.y1 - bedDraft.y0) };
+    bedDraft = null;
+    if (z.w < 0.05 || z.h < 0.05) return; // muy chica: seguramente fue un toque sin querer
+    settings.bedZones = [...settings.bedZones, z].slice(-3);
+    saveSettings();
+    bedMarking = false;
+    viewer.classList.remove('marking');
+    addLog('Cama marcada');
+    refreshBedInfo();
+  };
+  viewer.addEventListener('pointerup', finish);
+  viewer.addEventListener('pointercancel', () => { bedDraft = null; });
+  refreshBedInfo();
+}
+
+function drawBedZones(w, h) {
+  const zones = [...settings.bedZones];
+  if (bedDraft) zones.push({ x: Math.min(bedDraft.x0, bedDraft.x1), y: Math.min(bedDraft.y0, bedDraft.y1), w: Math.abs(bedDraft.x1 - bedDraft.x0), h: Math.abs(bedDraft.y1 - bedDraft.y0), draft: true });
+  if (!zones.length) return;
+  const fs = Math.max(13, Math.round(w / 55));
+  octx.save();
+  octx.setLineDash([12, 8]);
+  octx.lineWidth = Math.max(2, w / 350);
+  octx.font = `bold ${fs}px system-ui, sans-serif`;
+  for (const z of zones) {
+    octx.strokeStyle = z.draft ? 'rgba(250,204,21,.95)' : 'rgba(96,165,250,.95)';
+    octx.fillStyle = z.draft ? 'rgba(250,204,21,.12)' : 'rgba(96,165,250,.10)';
+    octx.fillRect(z.x * w, z.y * h, z.w * w, z.h * h);
+    octx.strokeRect(z.x * w, z.y * h, z.w * w, z.h * h);
+    octx.fillStyle = z.draft ? '#facc15' : '#93c5fd';
+    octx.fillText('🛏️ CAMA', z.x * w + 6, z.y * h + fs + 4);
+  }
+  octx.restore();
+}
+
+async function onPersonAlert(kind, person, total, w, h, source) {
   const when = new Date();
-  const lado = res.side ? ` (mano ${res.side})` : '';
-  const text = `⚠️ Se tocó la cabeza${lado}\n🕒 ${when.toLocaleString()}`;
-  addLog(`Se tocó la cabeza${lado}`, 'alert');
-  if (settings.beep) beep();
-  navigator.vibrate?.(300);
+  const lado = person.res.side ? ` (mano ${person.res.side})` : '';
+  const quien = `Persona ${person.id}`;
+  const cuantas = total === 1 ? '1 persona a la vista' : `${total} personas a la vista`;
+  const que = kind === 'fall' ? `🚨 ${quien} está CAÍDA en el suelo` : `⚠️ ${quien} se tocó la cabeza${lado}`;
+  const text = `📍 ${deviceName()}\n${que}\n👥 ${cuantas}\n🕒 ${when.toLocaleString()}`;
+  addLog(kind === 'fall' ? `${quien} caída en el suelo` : `${quien} se tocó la cabeza${lado}`, 'alert');
+  if (settings.beep) { beep(); if (kind === 'fall') setTimeout(beep, 600); }
+  navigator.vibrate?.(kind === 'fall' ? [300, 150, 300] : 300);
 
   let image;
   if (settings.sendPhoto) {
-    try {
-      const snap = document.createElement('canvas');
-      const scale = Math.min(1, 960 / w);
-      snap.width = Math.round(w * scale);
-      snap.height = Math.round(h * scale);
-      const sctx = snap.getContext('2d');
-      sctx.drawImage(source, 0, 0, snap.width, snap.height);
-      sctx.drawImage(els.overlay, 0, 0, snap.width, snap.height);
-      image = snap.toDataURL('image/jpeg', 0.8);
-    } catch (e) {
-      console.warn('No se pudo capturar la foto', e);
-    }
+    try { image = personPhoto(source, w, h, person.box); } catch (e) { console.warn('No se pudo capturar la foto', e); }
   }
   try {
     await sendAlert({ text, imageDataUrl: image });
@@ -701,7 +967,7 @@ async function sendAlert({ text, imageDataUrl }) {
 els.testBtn.addEventListener('click', async () => {
   els.testBtn.disabled = true;
   try {
-    await sendAlert({ text: `✅ Prueba de DETEC MOV\n🕒 ${new Date().toLocaleString()}` });
+    await sendAlert({ text: `✅ Prueba de DETEC MOV\n📍 ${deviceName()}\n🕒 ${new Date().toLocaleString()}` });
     addLog('Prueba enviada a Telegram');
   } catch (e) {
     addLog(`Error en la prueba: ${e.message}`, 'alert');
@@ -728,7 +994,15 @@ els.findChatBtn.addEventListener('click', async () => {
 // ---------------------------------------------------------------------------
 // Iniciar / detener
 
-els.startBtn.addEventListener('click', async () => {
+els.startBtn.addEventListener('click', async (ev) => {
+  // La primera vez que alguien toca Iniciar, se pide el nombre del equipo (en modo automático no se pregunta).
+  if (ev.isTrusted && !settings.deviceNameAsked) {
+    const n = prompt('¿Cómo se llama este equipo? Así aparece en cada aviso de Telegram.\n(Por ejemplo: Equipo 1 · Dormitorio)', deviceName());
+    if (n && n.trim()) settings.deviceName = n.trim().slice(0, 40);
+    settings.deviceNameAsked = true;
+    saveSettings();
+    els.deviceName.value = deviceName();
+  }
   els.startBtn.disabled = true;
   try {
     await loadModels();
@@ -737,7 +1011,8 @@ els.startBtn.addEventListener('click', async () => {
     await startSource();
     els.placeholder.hidden = true;
     els.stopBtn.disabled = false;
-    addLog('Vigilancia iniciada');
+    people.reset(); // numeración nueva (Persona 1, 2…) en cada inicio
+    addLog(`Vigilancia iniciada · ${deviceName()}`);
     try { wakeLock = await navigator.wakeLock?.request('screen'); } catch { /* opcional */ }
     startLiveShare();
     loop();
