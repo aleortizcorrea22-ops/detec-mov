@@ -47,7 +47,7 @@ main {
   max-width: 1200px; margin: 0 auto;
 }
 @media (min-width: 900px) { main { grid-template-columns: minmax(0, 1fr) 360px; align-items: start; } }
-.stage, .panel { background: var(--card); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+.stage, .panel { background: var(--card); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; min-width: 0; }
 .panel { padding: 4px 16px 16px; }
 .panel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 18px 0 8px; }
 .viewer { position: relative; background: #000; aspect-ratio: 4 / 3; }
@@ -116,7 +116,7 @@ dialog::backdrop { background: rgba(0,0,0,.5); }
 .licencia-bloqueo-caja p { margin: 0; font-size: 1rem; line-height: 1.4; color: #d7d7df; }
 
 /* Panel de administrador (oculto, solo en el equipo con el nombre secreto) */
-.tbl { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 8px 0; }
+.tbl { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 8px 0; width: 100%; min-width: 0; }
 #panelAdmin table { width: 100%; min-width: 560px; border-collapse: collapse; margin: 0; font-size: .85em; }
 #panelAdmin th, #panelAdmin td { white-space: nowrap; }
 #panelAdmin th, #panelAdmin td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
