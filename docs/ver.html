@@ -79,6 +79,22 @@
       sonidoBtn.textContent = video.muted ? '🔊 Activar sonido' : '🔇 Desactivar sonido';
     });
 
+    // Mientras se habla (mantener apretado o modo diálogo) conviene que el sonido
+    // esté prendido para escuchar la respuesta, así que se activa solo y el botón
+    // de sonido se esconde (no hace falta tocarlo); al soltar/cortar vuelve a pedir
+    // que se active a mano, como al principio.
+    function hablando(activo) {
+      if (activo) {
+        video.muted = false;
+        video.play().catch(() => {});
+        sonidoBtn.hidden = true;
+      } else {
+        video.muted = true;
+        sonidoBtn.textContent = '🔊 Activar sonido';
+        sonidoBtn.hidden = false;
+      }
+    }
+
     // Micrófono para hablar (push-to-talk): se pide una vez, antes de llamar,
     // y el track se manda apagado salvo mientras se mantiene apretado el botón,
     // para evitar el eco de tener los dos micrófonos abiertos todo el tiempo.
@@ -105,6 +121,7 @@
       if (dialogoActivo) return; // en modo diálogo el micrófono ya queda abierto
       if (micTrack) micTrack.enabled = activo;
       hablarBtn.classList.toggle('activo', activo);
+      hablando(activo);
     }
     hablarBtn.addEventListener('pointerdown', () => hablar(true));
     hablarBtn.addEventListener('pointerup', () => hablar(false));
@@ -118,7 +135,8 @@
       if (micTrack) micTrack.enabled = dialogoActivo;
       dialogoBtn.classList.toggle('activo', dialogoActivo);
       dialogoBtn.textContent = dialogoActivo ? '🎙️ Tocá para cortar el diálogo' : '🎙️ Tocá una vez para dialogar';
-      hablarBtn.disabled = dialogoActivo;
+      if (micTrack) hablarBtn.disabled = dialogoActivo;
+      hablando(dialogoActivo);
     });
 
     if (!remoteId) {
