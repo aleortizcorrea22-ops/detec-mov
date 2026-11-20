@@ -31,9 +31,9 @@
     .controles { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 14px; }
     button { font: inherit; border: 0; border-radius: 10px; padding: 14px 20px; cursor: pointer; }
     #sonidoBtn { background: #0f766e; color: #fff; }
-    #hablarBtn { background: #374151; color: #fff; width: 100%; max-width: 320px; font-size: 1.1rem; touch-action: none; user-select: none; }
-    #hablarBtn.activo { background: #ef4444; }
-    #hablarBtn[disabled] { opacity: 0.5; }
+    #hablarBtn, #dialogoBtn { background: #374151; color: #fff; width: 100%; max-width: 320px; font-size: 1.1rem; touch-action: none; user-select: none; }
+    #hablarBtn.activo, #dialogoBtn.activo { background: #ef4444; }
+    #hablarBtn[disabled], #dialogoBtn[disabled] { opacity: 0.5; }
   </style>
 </head>
 <body>
@@ -53,6 +53,7 @@
   <div class="controles">
     <button id="sonidoBtn">🔊 Activar sonido</button>
     <button id="hablarBtn" disabled>🎤 Mantené apretado para hablar</button>
+    <button id="dialogoBtn" disabled>🎙️ Tocá una vez para dialogar</button>
   </div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
   <script>
@@ -62,6 +63,7 @@
     const hint = document.getElementById('hint');
     const sonidoBtn = document.getElementById('sonidoBtn');
     const hablarBtn = document.getElementById('hablarBtn');
+    const dialogoBtn = document.getElementById('dialogoBtn');
     const remoteId = location.hash.slice(1);
     const equipo = new URLSearchParams(location.search).get('n');
     if (equipo) { document.getElementById('equipo').textContent = `📍 ${equipo}`; document.title = `${equipo} · Ver en vivo`; }
@@ -87,13 +89,20 @@
             micTrack = micStream.getAudioTracks()[0];
             micTrack.enabled = false;
             hablarBtn.disabled = false;
+            dialogoBtn.disabled = false;
           })
-          .catch(() => { hablarBtn.textContent = '🎤 Sin micrófono disponible'; })
+          .catch(() => {
+            hablarBtn.textContent = '🎤 Sin micrófono disponible';
+            dialogoBtn.textContent = '🎙️ Sin micrófono disponible';
+          })
       : Promise.resolve();
     // No esperamos para siempre: si tarda o no hay micrófono, se llama igual (solo video).
     const micOrTimeout = Promise.race([micReady, new Promise((r) => setTimeout(r, 4000))]);
 
+    let dialogoActivo = false;
+
     function hablar(activo) {
+      if (dialogoActivo) return; // en modo diálogo el micrófono ya queda abierto
       if (micTrack) micTrack.enabled = activo;
       hablarBtn.classList.toggle('activo', activo);
     }
@@ -101,6 +110,16 @@
     hablarBtn.addEventListener('pointerup', () => hablar(false));
     hablarBtn.addEventListener('pointerleave', () => hablar(false));
     hablarBtn.addEventListener('pointercancel', () => hablar(false));
+
+    // Modo diálogo: tocás una vez y el micrófono queda abierto todo el tiempo,
+    // para no tener que acordarse de mantener apretado. Tocás de nuevo para cerrarlo.
+    dialogoBtn.addEventListener('click', () => {
+      dialogoActivo = !dialogoActivo;
+      if (micTrack) micTrack.enabled = dialogoActivo;
+      dialogoBtn.classList.toggle('activo', dialogoActivo);
+      dialogoBtn.textContent = dialogoActivo ? '🎙️ Tocá para cortar el diálogo' : '🎙️ Tocá una vez para dialogar';
+      hablarBtn.disabled = dialogoActivo;
+    });
 
     if (!remoteId) {
       setStatus('Falta el link completo (con el código después de #).');
