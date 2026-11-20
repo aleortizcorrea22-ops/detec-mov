@@ -24,6 +24,14 @@
     #status { color: #9aa7ab; font-size: 14px; }
     .stage { position: relative; display: grid; place-items: center; padding: 10px; }
     video { max-width: 100%; max-height: calc(100vh - 60px); border-radius: 8px; background: #000; }
+    /* Alternativa cuando el navegador (p. ej. el de Telegram) no deja usar pantalla
+       completa real: agranda el video dentro de la misma página igual. */
+    body.zoom-manual { overflow: hidden; }
+    body.zoom-manual header { position: fixed; top: 0; left: 0; right: 0; }
+    body.zoom-manual .controles { position: fixed; bottom: 0; left: 0; right: 0; background: #0b0f10; z-index: 4; }
+    body.zoom-manual .stage { position: fixed; inset: 0; padding: 0; }
+    body.zoom-manual video { max-height: 100vh; max-width: 100vw; border-radius: 0; }
+    body.zoom-manual p.hint { display: none; }
     .btn-zoom {
       position: absolute; right: 18px; bottom: 18px; z-index: 3;
       width: 42px; height: 42px; padding: 0; font-size: 20px; line-height: 1;
@@ -82,33 +90,42 @@
 
     // Pantalla completa de toda la página (no solo el video), así el logo de AXIVEN
     // y los botones de sonido/hablar/dialogar siguen visibles y usables arriba y abajo.
-    zoomBtn.addEventListener('click', () => {
-      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-      else document.documentElement.requestFullscreen().catch(() => {});
+    // Si el navegador no deja pedir pantalla completa real (pasa en el navegador propio
+    // de Telegram), se usa una alternativa: agrandar el video dentro de la misma página.
+    function puestaEnZoom() { return document.body.classList.contains('zoom-manual') || !!document.fullscreenElement; }
+    function actualizarBotonZoom() { zoomBtn.textContent = puestaEnZoom() ? '🗗' : '⛶'; }
+    zoomBtn.addEventListener('click', async () => {
+      if (puestaEnZoom()) {
+        if (document.fullscreenElement) { try { await document.exitFullscreen(); } catch {} }
+        document.body.classList.remove('zoom-manual');
+      } else if (document.documentElement.requestFullscreen) {
+        try { await document.documentElement.requestFullscreen(); }
+        catch { document.body.classList.add('zoom-manual'); }
+      } else {
+        document.body.classList.add('zoom-manual');
+      }
+      actualizarBotonZoom();
     });
-    document.addEventListener('fullscreenchange', () => {
-      zoomBtn.textContent = document.fullscreenElement ? '🗗' : '⛶';
-    });
+    document.addEventListener('fullscreenchange', actualizarBotonZoom);
 
+    function actualizarBotonSonido() {
+      sonidoBtn.textContent = video.muted ? '🔊 Activar sonido' : '🔇 Desactivar sonido';
+    }
     sonidoBtn.addEventListener('click', () => {
       video.muted = !video.muted;
       if (!video.muted) video.play().catch(() => {});
-      sonidoBtn.textContent = video.muted ? '🔊 Activar sonido' : '🔇 Desactivar sonido';
+      actualizarBotonSonido();
     });
 
     // Mientras se habla (mantener apretado o modo diálogo) conviene que el sonido
-    // esté prendido para escuchar la respuesta, así que se activa solo y el botón
-    // de sonido se esconde (no hace falta tocarlo); al soltar/cortar vuelve a pedir
-    // que se active a mano, como al principio.
+    // esté prendido para escuchar la respuesta, así que se activa solo si estaba
+    // apagado. No se vuelve a apagar solo al soltar: el botón de sonido sigue
+    // mandando, por si se quiere dejar escuchando después de hablar.
     function hablando(activo) {
-      if (activo) {
+      if (activo && video.muted) {
         video.muted = false;
         video.play().catch(() => {});
-        sonidoBtn.hidden = true;
-      } else {
-        video.muted = true;
-        sonidoBtn.textContent = '🔊 Activar sonido';
-        sonidoBtn.hidden = false;
+        actualizarBotonSonido();
       }
     }
 
