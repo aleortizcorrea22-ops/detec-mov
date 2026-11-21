@@ -639,8 +639,11 @@ function processFrame({ source, w, h }) {
     const res = evaluateFrame(pose, handsByPose[p.index], w, h, { sensitivity: settings.sensitivity, includeFace: settings.includeFace });
     const touchState = p.track.touch.update(res.touching, now);
     const act = p.track.act.update(pose, w, h, now, { bedZones: settings.bedZones });
-    // Acostada en una zona marcada como cama no es una caída.
-    const lying = settings.detectFalls && act.lyingNow && !act.inBed;
+    // Acostada en una zona marcada como cama no es una caída. Tampoco cuenta si esta
+    // persona nunca estuvo parada o sentada antes: una caída real siempre tiene una
+    // postura normal previa, así que "nacer" ya acostado (típico de un objeto confundido
+    // con una persona) no alcanza para avisar.
+    const lying = settings.detectFalls && act.lyingNow && !act.inBed && act.huboPosturaNormalAntes;
     const fallState = settings.detectFalls ? p.track.fall.update(lying, now) : 'idle';
     return { id: p.id, track: p.track, pose, hands: handsByPose[p.index], res, touchState, lying, fallState, box: poseBox(pose, w, h),
       posture: act.posture, walking: act.walking, inBed: act.lyingNow && act.inBed, events: act.events };

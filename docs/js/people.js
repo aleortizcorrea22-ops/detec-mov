@@ -285,9 +285,14 @@ export class ActivityTracker {
     this.trail = []; // [{t, x, y, torso}]
     this.walking = false;
     this.slowSince = null;
+    // Para que una caída cuente de verdad, esta persona tiene que haber estado parada o
+    // sentada en algún momento ANTES (no alcanza con aparecer ya tirada): evita que un
+    // objeto que "nace" ya con pose de acostado (un cable, una caja en el piso) cuente
+    // como una caída real, sin tener que esperar a ver primero a una persona de pie.
+    this.huboPosturaNormalAntes = false;
   }
 
-  /** @returns {{posture:string, walking:boolean, events:string[], lyingNow:boolean, inBed:boolean}} */
+  /** @returns {{posture:string, walking:boolean, events:string[], lyingNow:boolean, inBed:boolean, huboPosturaNormalAntes:boolean}} */
   update(pose, w, h, now, { bedZones = [] } = {}) {
     const events = [];
     const p = classifyPosture(pose, w, h, bedZones);
@@ -299,6 +304,7 @@ export class ActivityTracker {
       if (s !== this.state && now - this.candSince >= this.stableMs) {
         const prev = this.state;
         this.state = s;
+        if (s === 'parada' || s === 'sentada') this.huboPosturaNormalAntes = true;
         if (prev) {
           if (s === 'sentada' && prev === 'parada') events.push('sento');
           if (s === 'parada' && prev === 'sentada') events.push('levanto');
@@ -339,6 +345,6 @@ export class ActivityTracker {
         }
       }
     }
-    return { posture: this.state || 'desconocida', walking: this.walking, events, lyingNow: p.posture === 'acostada', inBed: p.inBed };
+    return { posture: this.state || 'desconocida', walking: this.walking, events, lyingNow: p.posture === 'acostada', inBed: p.inBed, huboPosturaNormalAntes: this.huboPosturaNormalAntes };
   }
 }
