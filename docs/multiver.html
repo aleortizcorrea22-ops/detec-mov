@@ -132,9 +132,32 @@
       const blankCanvas = document.createElement('canvas');
       blankCanvas.width = 2; blankCanvas.height = 2;
 
+      // La llamada necesita ofrecer un canal de audio (aunque sea en silencio) para que
+      // la vigía pueda contestar con SU audio: si no se ofrece ninguno, no hay por dónde
+      // volver con sonido real, aunque la vigía sí lo mande.
+      function pistaDeAudioSilenciosa() {
+        try {
+          const ctx = new (window.AudioContext || window.webkitAudioContext)();
+          const destino = ctx.createMediaStreamDestination();
+          const osc = ctx.createOscillator();
+          const ganancia = ctx.createGain();
+          ganancia.gain.value = 0;
+          osc.connect(ganancia).connect(destino);
+          osc.start();
+          return destino.stream.getAudioTracks()[0];
+        } catch { return null; }
+      }
+
+      function outgoingStream() {
+        const s = blankCanvas.captureStream ? blankCanvas.captureStream(1) : new MediaStream();
+        const silencio = pistaDeAudioSilenciosa();
+        if (silencio) s.addTrack(silencio);
+        return s;
+      }
+
       function tryCall(peer) {
         estado.textContent = 'Llamando…';
-        const call = peer.call(peerId, blankCanvas.captureStream ? blankCanvas.captureStream(1) : new MediaStream());
+        const call = peer.call(peerId, outgoingStream());
         call.on('stream', (remoteStream) => {
           connected = true;
           clearTimeout(retryTimer);
