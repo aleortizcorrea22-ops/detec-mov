@@ -903,10 +903,13 @@ const ACTIVITIES = {
 async function onActivity(ev, person, total, w, h, source) {
   const a = ACTIVITIES[ev];
   if (!a) return;
-  // No repetir el mismo aviso de la misma persona en menos de 20 s.
+  // No repetir el mismo aviso de la misma persona antes de la espera que el usuario
+  // configuró ("Espera entre alertas"): la misma que se usa para el resto de las alertas,
+  // así el usuario maneja un solo control para todas.
   const now = Date.now();
   person.track.lastEv ??= {};
-  if (now - (person.track.lastEv[ev] || 0) < 20000) return;
+  const minGap = settings.cooldownS * 1000;
+  if (now - (person.track.lastEv[ev] || 0) < minGap) return;
   person.track.lastEv[ev] = now;
 
   const quien = `Persona ${person.id}`;
