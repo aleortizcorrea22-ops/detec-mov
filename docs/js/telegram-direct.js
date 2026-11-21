@@ -27,8 +27,23 @@ export function saveDirectConfig({ token, chatIds }) {
 async function call(token, method, body) {
   const r = await fetch(`https://api.telegram.org/bot${token}/${method}`, { method: 'POST', body });
   const data = await r.json().catch(() => ({}));
-  if (!data.ok) throw new Error(data.description || `Telegram respondió ${r.status}`);
+  if (!data.ok) {
+    const err = new Error(data.description || `Telegram respondió ${r.status}`);
+    // Cuando un grupo se convierte en supergrupo, Telegram le cambia el chat_id y avisa
+    // el nuevo acá (migrate_to_chat_id); si no, cualquier mensaje a ese grupo falla para
+    // siempre con este mismo error.
+    if (data.parameters && data.parameters.migrate_to_chat_id) err.migrateToChatId = String(data.parameters.migrate_to_chat_id);
+    throw err;
+  }
   return data.result;
+}
+
+/** Si un chat_id guardado migró a supergrupo, lo reemplaza por el nuevo y lo guarda. */
+function reemplazarChatIdMigrado(chatIdViejo, chatIdNuevo) {
+  const cfg = loadDirectConfig();
+  const chatIds = cfg.chatIds.map((c) => (c === chatIdViejo ? chatIdNuevo : c));
+  saveDirectConfig({ token: cfg.token, chatIds: chatIds.join(',') });
+  return chatIds;
 }
 
 function photoFromDataUrl(imageDataUrl) {
@@ -40,6 +55,28 @@ function photoFromDataUrl(imageDataUrl) {
   return new Blob([bytes], { type: `image/${m[1]}` });
 }
 
+/** Manda el mensaje (con foto si se pasa) a un chat puntual, con un solo reintento si
+ *  Telegram avisa que ese grupo migró a supergrupo (usando el chat_id nuevo). */
+async function enviarA(token, chatId, text, photo) {
+  const form = new FormData();
+  form.append('chat_id', chatId);
+  if (photo) { form.append('caption', text); form.append('photo', photo, 'alerta.jpg'); }
+  else form.append('text', text);
+  try {
+    await call(token, photo ? 'sendPhoto' : 'sendMessage', form);
+    return chatId;
+  } catch (e) {
+    if (!e.migrateToChatId) throw e;
+    reemplazarChatIdMigrado(chatId, e.migrateToChatId);
+    const form2 = new FormData();
+    form2.append('chat_id', e.migrateToChatId);
+    if (photo) { form2.append('caption', text); form2.append('photo', photo, 'alerta.jpg'); }
+    else form2.append('text', text);
+    await call(token, photo ? 'sendPhoto' : 'sendMessage', form2);
+    return e.migrateToChatId;
+  }
+}
+
 /** Manda el mensaje (con foto si se pasa) a cada chat configurado. Devuelve cuántos recibieron. */
 export async function sendDirectAlert({ text, imageDataUrl }) {
   const { token, chatIds } = loadDirectConfig();
@@ -47,16 +84,7 @@ export async function sendDirectAlert({ text, imageDataUrl }) {
   const photo = photoFromDataUrl(imageDataUrl);
   let sent = 0;
   for (const chatId of chatIds) {
-    const form = new FormData();
-    form.append('chat_id', chatId);
-    if (photo) {
-      form.append('caption', text);
-      form.append('photo', photo, 'alerta.jpg');
-      await call(token, 'sendPhoto', form);
-    } else {
-      form.append('text', text);
-      await call(token, 'sendMessage', form);
-    }
+    await enviarA(token, chatId, text, photo);
     sent++;
   }
   return sent;
