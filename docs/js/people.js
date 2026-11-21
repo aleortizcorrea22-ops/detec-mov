@@ -81,6 +81,12 @@ export function isLying(pose, w, h) {
   // mano cerca de cámara: sin suficiente evidencia de cuerpo real, no hay caída posible.
   if (!poseBox(pose, w, h)) return { lying: false, angle: null, reason: 'sin evidencia de cuerpo' };
 
+  // Una caída real deja ver el cuerpo entero (incluidas las piernas): exigir al menos
+  // una rodilla visible descarta la mayoría de las "alucinaciones" de hombros+cadera a
+  // partir de un objeto cualquiera cerca de cámara (mano, vaso, etc.), que casi nunca
+  // vienen acompañadas de una rodilla creíble y bien ubicada.
+  if (!vis(pose[KNEE.L]) && !vis(pose[KNEE.R])) return { lying: false, angle: null, reason: 'sin rodillas visibles' };
+
   const sh = mid(px(ls, w, h), px(rs, w, h));
   const hp = mid(px(lh, w, h), px(rh, w, h));
   const torso = dist(sh, hp);
@@ -89,11 +95,18 @@ export function isLying(pose, w, h) {
   // está cerca o lejos de la cámara (los dos miden más chico o más grande por igual),
   // así que sirve para distinguir una persona real de puntos sueltos adivinados (por
   // ejemplo, a partir de solo una mano cerca de cámara) sin penalizar a quien está lejos.
+  // Rango ajustado a proporciones humanas reales (antes era demasiado permisivo).
   const shoulderW = dist(px(ls, w, h), px(rs, w, h));
   if (shoulderW > 0) {
     const ratio = torso / shoulderW;
-    if (ratio < 0.35 || ratio > 4.5) return { lying: false, angle: null, reason: 'proporción de cuerpo inválida' };
+    if (ratio < 0.6 || ratio > 2.8) return { lying: false, angle: null, reason: 'proporción de cuerpo inválida' };
   }
+  // La rodilla visible tiene que estar a una distancia razonable de la cadera (continuar
+  // el cuerpo), no en cualquier lado: si está pegada a la cadera o rarísimo de lejos,
+  // tampoco es una pierna real.
+  const kneePt = vis(pose[KNEE.L]) ? px(pose[KNEE.L], w, h) : px(pose[KNEE.R], w, h);
+  const hipKneeDist = dist(hp, kneePt);
+  if (hipKneeDist < 0.3 * torso || hipKneeDist > 3 * torso) return { lying: false, angle: null, reason: 'rodilla en posición inválida' };
 
   // 0° = tronco vertical, 90° = horizontal
   const angle = (Math.atan2(Math.abs(sh.x - hp.x), Math.abs(sh.y - hp.y)) * 180) / Math.PI;
