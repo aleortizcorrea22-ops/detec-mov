@@ -118,13 +118,17 @@
       const videoCaja = tarjeta.querySelector('.video-caja');
 
       // Tocando un video se escucha ese y se silencian todos los demás, para no
-      // mezclar el sonido de varios vigías a la vez.
+      // mezclar el sonido de varios vigías a la vez. Tocando el que ya está sonando,
+      // se apaga (no se queda pegado para siempre).
       videoCaja.addEventListener('click', () => {
+        const yaEstabaEscuchando = tarjeta.classList.contains('escuchando');
         document.querySelectorAll('.tarjeta video').forEach((v) => { v.muted = true; });
         document.querySelectorAll('.tarjeta').forEach((t) => t.classList.remove('escuchando'));
-        video.muted = false;
-        video.play().catch(() => {});
-        tarjeta.classList.add('escuchando');
+        if (!yaEstabaEscuchando) {
+          video.muted = false;
+          video.play().catch(() => {});
+          tarjeta.classList.add('escuchando');
+        }
       });
 
       let connected = false;
