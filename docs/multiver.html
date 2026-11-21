@@ -62,6 +62,24 @@
     // de varios a la vez); se toca el video que se quiere escuchar y "Ver grande"
     // abre la pantalla completa de ese vigía (con hablar/dialogar).
     const BASE_URL = 'https://detecmov.axivenvirtual.com';
+    // Servidores para cruzar redes difíciles: STUN de Google siempre, más el TURN
+    // propio de la Raspberry pedido al vuelo (la clave no está escrita acá, que es
+    // código público), y uno público gratuito (Open Relay) de respaldo.
+    async function obtenerIceServers() {
+      const respaldo = {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+          { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+        ],
+      };
+      try {
+        const r = await fetch(`${BASE_URL}/api/ice-servers`);
+        const { iceServers } = await r.json();
+        if (Array.isArray(iceServers) && iceServers.length) return { iceServers: [...iceServers, ...respaldo.iceServers] };
+      } catch { /* sin conexión con la Raspberry ahora: se usa el respaldo */ }
+      return respaldo;
+    }
     const contenido = document.getElementById('contenido');
     const vacioMsg = document.createElement('p');
     vacioMsg.className = 'vacio';
@@ -79,7 +97,7 @@
 
     function agregarTarjeta(nombre, peerId) {
       if (tarjetas.has(peerId)) return;
-      const verUrl = `ver.html?n=${encodeURIComponent(nombre)}#${encodeURIComponent(peerId)}`;
+      const verUrl = `ver.html?n=${encodeURIComponent(nombre)}&volver=${encodeURIComponent(location.href)}#${encodeURIComponent(peerId)}`;
       const tarjeta = document.createElement('div');
       tarjeta.className = 'tarjeta';
       tarjeta.innerHTML = `
@@ -135,14 +153,17 @@
         retryTimer = setTimeout(() => tryCall(peer), 5000);
       }
 
-      const peer = new Peer();
-      peer.on('open', () => tryCall(peer));
-      peer.on('error', (err) => {
-        if (err.type === 'peer-unavailable') { scheduleRetry(peer); return; }
-        estado.textContent = `Error: ${err.type || err.message}`;
+      obtenerIceServers().then((config) => {
+        const peer = new Peer(undefined, { config });
+        peer.on('open', () => tryCall(peer));
+        peer.on('error', (err) => {
+          if (err.type === 'peer-unavailable') { scheduleRetry(peer); return; }
+          estado.textContent = `Error: ${err.type || err.message}`;
+        });
+        tarjetas.get(peerId).peer = peer;
       });
 
-      tarjetas.set(peerId, { el: tarjeta, peer });
+      tarjetas.set(peerId, { el: tarjeta, peer: null });
       actualizarVacio();
     }
 

@@ -5,6 +5,27 @@ import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } 
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo, loadLicenciaConfig } from './licencia.js';
 import { iniciarPanelAdmin, NOMBRE_ADMIN_SECRETO } from './admin-panel.js';
 
+// Servidores para que el video en vivo cruce redes difíciles (NAT estricto, datos
+// móviles): STUN de Google siempre, más el TURN propio de la Raspberry, pedido al
+// vuelo (la clave y la IP de esta casa no están escritas acá, que es código público).
+// Si no se puede pedir, se usa uno público gratuito (Open Relay) de respaldo.
+const ICE_SERVERS_RESPALDO = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+  ],
+};
+async function obtenerIceServers() {
+  try {
+    const { baseUrl } = loadLicenciaConfig();
+    const r = await fetch(`${baseUrl}/api/ice-servers`);
+    const { iceServers } = await r.json();
+    if (Array.isArray(iceServers) && iceServers.length) return { iceServers: [...iceServers, ...ICE_SERVERS_RESPALDO.iceServers] };
+  } catch { /* sin conexión con la Raspberry ahora: se usa el respaldo */ }
+  return ICE_SERVERS_RESPALDO;
+}
+
 const $ = (id) => document.getElementById(id);
 const els = {
   video: $('video'), ipImg: $('ipImg'), overlay: $('overlay'), placeholder: $('placeholder'), banner: $('banner'),
@@ -353,8 +374,8 @@ function liveShareId() {
 
 let latidoPresencia = null;
 
-function openLivePeer(id) {
-  livePeer = new Peer(id);
+async function openLivePeer(id) {
+  livePeer = new Peer(id, { config: await obtenerIceServers() });
   livePeer.on('open', async () => {
     if (liveLinkSent) return;
     liveLinkSent = true;

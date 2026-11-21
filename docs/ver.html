@@ -45,6 +45,7 @@
     <strong id="equipo" style="font-size:18px;margin-right:6px"></strong>
     <span id="dot" class="dot"></span>
     <span id="status">Conectando…</span>
+    <a id="volverBtn" class="btn" href="#" hidden style="margin-left:auto;text-decoration:none;color:#e6edf0;background:#374151;padding:8px 12px;border-radius:8px;font-size:14px">← Ver todos</a>
   </header>
   <div class="stage">
     <video id="video" playsinline autoplay muted></video>
@@ -57,6 +58,26 @@
   </div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
   <script>
+    const BASE_URL = 'https://detecmov.axivenvirtual.com';
+    // Servidores para cruzar redes difíciles: STUN de Google siempre, más el TURN
+    // propio de la Raspberry pedido al vuelo (la clave no está escrita acá, que es
+    // código público), y uno público gratuito (Open Relay) de respaldo.
+    async function obtenerIceServers() {
+      const respaldo = {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+          { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+        ],
+      };
+      try {
+        const r = await fetch(`${BASE_URL}/api/ice-servers`);
+        const { iceServers } = await r.json();
+        if (Array.isArray(iceServers) && iceServers.length) return { iceServers: [...iceServers, ...respaldo.iceServers] };
+      } catch { /* sin conexión con la Raspberry ahora: se usa el respaldo */ }
+      return respaldo;
+    }
+
     const video = document.getElementById('video');
     const status = document.getElementById('status');
     const dot = document.getElementById('dot');
@@ -67,6 +88,14 @@
     const remoteId = location.hash.slice(1);
     const equipo = new URLSearchParams(location.search).get('n');
     if (equipo) { document.getElementById('equipo').textContent = `📍 ${equipo}`; document.title = `${equipo} · Ver en vivo`; }
+    // Si se llegó acá desde "Ver varios en vivo" (tocando "Ver grande" en un recuadro),
+    // se puede volver a esa pantalla con todos los vigías juntos.
+    const volver = new URLSearchParams(location.search).get('volver');
+    if (volver) {
+      const volverBtn = document.getElementById('volverBtn');
+      volverBtn.href = volver;
+      volverBtn.hidden = false;
+    }
 
     function setStatus(text, live) {
       status.textContent = text;
@@ -187,12 +216,17 @@
         retryTimer = setTimeout(() => tryCall(peer), 5000);
       }
 
-      const peer = new Peer();
-      peer.on('open', () => micOrTimeout.then(() => tryCall(peer)));
-      peer.on('error', (err) => {
-        if (err.type === 'peer-unavailable') { scheduleRetry(peer); return; }
-        setStatus(`Error: ${err.type || err.message}`);
-        hint.hidden = false;
+      // Servidores para cruzar redes difíciles: STUN de Google siempre, más el TURN
+      // propio de la Raspberry pedido al vuelo (la clave no está escrita acá), y uno
+      // público gratuito (Open Relay) de respaldo si no se pudo pedir.
+      obtenerIceServers().then((config) => {
+        const peer = new Peer(undefined, { config });
+        peer.on('open', () => micOrTimeout.then(() => tryCall(peer)));
+        peer.on('error', (err) => {
+          if (err.type === 'peer-unavailable') { scheduleRetry(peer); return; }
+          setStatus(`Error: ${err.type || err.message}`);
+          hint.hidden = false;
+        });
       });
     }
   </script>
