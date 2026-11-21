@@ -5,7 +5,7 @@ import { setupInstallButton } from './install.js';
 // Visible en pantalla (junto al nombre) para confirmar de un vistazo si el celular/PC ya
 // tiene la versión más nueva, sin tener que abrir herramientas de desarrollador. Se sube
 // junto con el VERSION de sw.js en cada cambio.
-const APP_VERSION = 'v60';
+const APP_VERSION = 'v61';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo, loadLicenciaConfig } from './licencia.js';
 import { iniciarPanelAdmin, NOMBRE_ADMIN_SECRETO } from './admin-panel.js';
@@ -48,7 +48,7 @@ const els = {
   alertSento: $('alertSento'), alertLevanto: $('alertLevanto'), alertCamaEntra: $('alertCamaEntra'), alertCamaSale: $('alertCamaSale'),
   alertCamina: $('alertCamina'), alertQuieta: $('alertQuieta'), alertPideAyuda: $('alertPideAyuda'), bedMarkBtn: $('bedMarkBtn'), bedClearBtn: $('bedClearBtn'), bedInfo: $('bedInfo'),
   watchZoneEnter: $('watchZoneEnter'), watchZoneExit: $('watchZoneExit'), watchZoneInside: $('watchZoneInside'), watchZoneOutside: $('watchZoneOutside'),
-  watchZoneMarkBtn: $('watchZoneMarkBtn'), watchZoneClearBtn: $('watchZoneClearBtn'), watchZoneResetBtn: $('watchZoneResetBtn'), watchZoneInfo: $('watchZoneInfo'),
+  watchZoneMarkBtn: $('watchZoneMarkBtn'), watchZoneClearBtn: $('watchZoneClearBtn'), watchZoneResetBtn: $('watchZoneResetBtn'), watchZoneInfo: $('watchZoneInfo'), watchZoneLive: $('watchZoneLive'),
   watchDwellInS: $('watchDwellInS'), watchDwellInVal: $('watchDwellInVal'), watchDwellInUnit: $('watchDwellInUnit'),
   watchDwellOutS: $('watchDwellOutS'), watchDwellOutVal: $('watchDwellOutVal'), watchDwellOutUnit: $('watchDwellOutUnit'),
 };
@@ -1060,6 +1060,15 @@ function drawBedZones(w, h) {
 let watchMarking = false;
 let watchDraft = null;
 
+/** "90 s" → "1 min 30 s"; abajo de los 60 s queda tal cual, para que se lea fácil. */
+function formatElapsed(totalS) {
+  if (totalS < 60) return `${totalS} s`;
+  const h = Math.floor(totalS / 3600);
+  const m = Math.floor((totalS % 3600) / 60);
+  const s = totalS % 60;
+  return (h ? `${h} h ` : '') + (m ? `${m} min ` : '') + `${s} s`;
+}
+
 function refreshWatchZoneInfo() {
   const n = (settings.watchZones || []).length;
   const anyEnabled = settings.watchZoneEnter || settings.watchZoneExit || settings.watchZoneInside || settings.watchZoneOutside;
@@ -1069,6 +1078,21 @@ function refreshWatchZoneInfo() {
   els.watchZoneInfo.textContent = (watchMarking
     ? 'Arrastre el dedo sobre la imagen, de una esquina de la zona a la otra.'
     : n ? 'Zona marcada.' : 'No hay ninguna zona marcada.') + contador;
+  // Reloj en vivo: por cada persona que se está siguiendo, cuánto tiempo lleva en el
+  // mismo lugar (adentro o afuera), para ver que el conteo "corre" sin esperar la alerta.
+  if (els.watchZoneLive) {
+    if (!n || !people.tracks.length) {
+      els.watchZoneLive.textContent = '';
+    } else {
+      els.watchZoneLive.textContent = people.tracks
+        .map((t) => {
+          const a = t.act;
+          const donde = a.zoneInsideNow ? 'adentro' : 'afuera';
+          return `Persona ${t.id}: ${donde} hace ${formatElapsed(Math.round(a.zoneElapsedMs / 1000))}`;
+        })
+        .join(' · ');
+    }
+  }
   els.watchZoneClearBtn.disabled = !n;
   els.watchZoneMarkBtn.textContent = watchMarking ? 'Cancelar' : '📍 Marcar zona';
   els.watchZoneMarkBtn.disabled = !anyEnabled;
@@ -1417,3 +1441,5 @@ $('shutdownBtn').addEventListener('click', async () => {
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch((e) => console.warn('SW no registrado', e));
 }
+
+setInterval(refreshWatchZoneInfo, 1000); // reloj en vivo de la zona (entradas/salidas y tiempo adentro/afuera)
