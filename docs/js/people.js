@@ -77,11 +77,23 @@ export function isLying(pose, w, h) {
   const lh = pose[HIP.L];
   const rh = pose[HIP.R];
   if (!(vis(ls) && vis(rs) && vis(lh) && vis(rh))) return { lying: false, angle: null, reason: 'no se ve el tronco' };
+  // Evita que el modelo "alucine" un torso completo a partir de, por ejemplo, solo una
+  // mano cerca de cámara: sin suficiente evidencia de cuerpo real, no hay caída posible.
+  if (!poseBox(pose, w, h)) return { lying: false, angle: null, reason: 'sin evidencia de cuerpo' };
 
   const sh = mid(px(ls, w, h), px(rs, w, h));
   const hp = mid(px(lh, w, h), px(rh, w, h));
   const torso = dist(sh, hp);
   if (torso < 5) return { lying: false, angle: null, reason: 'muy chico' };
+  // Proporción del cuerpo (torso vs. ancho de hombros): NO depende de si la persona
+  // está cerca o lejos de la cámara (los dos miden más chico o más grande por igual),
+  // así que sirve para distinguir una persona real de puntos sueltos adivinados (por
+  // ejemplo, a partir de solo una mano cerca de cámara) sin penalizar a quien está lejos.
+  const shoulderW = dist(px(ls, w, h), px(rs, w, h));
+  if (shoulderW > 0) {
+    const ratio = torso / shoulderW;
+    if (ratio < 0.35 || ratio > 4.5) return { lying: false, angle: null, reason: 'proporción de cuerpo inválida' };
+  }
 
   // 0° = tronco vertical, 90° = horizontal
   const angle = (Math.atan2(Math.abs(sh.x - hp.x), Math.abs(sh.y - hp.y)) * 180) / Math.PI;
@@ -216,6 +228,9 @@ export function classifyPosture(pose, w, h, bedZones = []) {
   const lh = pose[HIP.L];
   const rh = pose[HIP.R];
   if (!(vis(lh) && vis(rh))) return { posture: 'desconocida', inBed: false, hip: null, torso: 0 };
+  // Sin evidencia real de cuerpo (por ejemplo, solo una mano cerca de cámara con puntos
+  // de cadera adivinados), no se arriesga una postura: mejor "desconocida" que inventar.
+  if (!poseBox(pose, w, h)) return { posture: 'desconocida', inBed: false, hip: null, torso: 0 };
   const hip = mid(px(lh, w, h), px(rh, w, h));
   const torso = vis(ls) && vis(rs) ? dist(mid(px(ls, w, h), px(rs, w, h)), hip) : 0;
 
