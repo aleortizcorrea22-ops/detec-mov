@@ -226,6 +226,31 @@ export function inZones(pt, zones, w, h) {
   return (zones || []).some((z) => pt.x >= z.x * w && pt.x <= (z.x + z.w) * w && pt.y >= z.y * h && pt.y <= (z.y + z.h) * h);
 }
 
+/** ¿Tiene uno de los dos brazos bien levantado (como pidiendo algo o llamando)?
+ * Exige el brazo ESTIRADO hacia arriba (hombro, codo y muñeca alineados hacia arriba,
+ * no solo la mano cerca del hombro), con una distancia mínima que se ajusta sola según
+ * el tamaño de la persona en la imagen (no importa si está cerca o lejos de cámara). */
+export function brazoLevantado(pose, w, h) {
+  const lado = (shIdx, elIdx, wrIdx) => {
+    const sh = pose[shIdx], el = pose[elIdx], wr = pose[wrIdx];
+    if (!vis(sh) || !vis(wr)) return false;
+    const shP = px(sh, w, h);
+    const wrP = px(wr, w, h);
+    const otroHombro = pose[shIdx === P.L_SHOULDER ? P.R_SHOULDER : P.L_SHOULDER];
+    const anchoHombros = vis(otroHombro) ? dist(shP, px(otroHombro, w, h)) : null;
+    if (!anchoHombros || anchoHombros < 2) return false;
+    const muñecaArriba = (shP.y - wrP.y) > 0.8 * anchoHombros; // bastante por encima del hombro
+    if (!muñecaArriba) return false;
+    // Si se ve el codo, que también esté arriba (brazo estirado, no doblado al revés).
+    if (vis(el)) {
+      const elP = px(el, w, h);
+      if (elP.y > shP.y + 0.3 * anchoHombros) return false;
+    }
+    return true;
+  };
+  return lado(P.L_SHOULDER, P.L_ELBOW, P.L_WRIST) || lado(P.R_SHOULDER, P.R_ELBOW, P.R_WRIST);
+}
+
 /**
  * Postura de una persona.
  * - acostada: el tronco queda horizontal (ver isLying).
@@ -277,8 +302,8 @@ export function classifyPosture(pose, w, h, bedZones = []) {
  * Cada cambio tiene que mantenerse un rato (stableMs) para no avisar por un movimiento suelto.
  */
 export class ActivityTracker {
-  constructor({ stableMs = 1500, walkSpeed = 0.7, stillSpeed = 0.15, stillMs = 3000, windowMs = 1500 } = {}) {
-    Object.assign(this, { stableMs, walkSpeed, stillSpeed, stillMs, windowMs });
+  constructor({ stableMs = 1500, walkSpeed = 0.7, stillSpeed = 0.15, stillMs = 3000, windowMs = 1500, brazoStableMs = 1200 } = {}) {
+    Object.assign(this, { stableMs, walkSpeed, stillSpeed, stillMs, windowMs, brazoStableMs });
     this.state = null; // 'parada' | 'sentada' | 'acostada' | 'cama'
     this.cand = null;
     this.candSince = 0;
@@ -290,13 +315,34 @@ export class ActivityTracker {
     // objeto que "nace" ya con pose de acostado (un cable, una caja en el piso) cuente
     // como una caída real, sin tener que esperar a ver primero a una persona de pie.
     this.huboPosturaNormalAntes = false;
+    // Brazo levantado (pidiendo algo): se analiza antes/durante/después. Solo se calcula
+    // si se pide explícitamente (ver opts.detectarBrazoArriba), para no gastar de más en
+    // quien no activó esta opción.
+    this.brazoState = 'abajo';
+    this.brazoCand = 'abajo';
+    this.brazoCandSince = 0;
   }
 
   /** @returns {{posture:string, walking:boolean, events:string[], lyingNow:boolean, inBed:boolean, huboPosturaNormalAntes:boolean}} */
-  update(pose, w, h, now, { bedZones = [] } = {}) {
+  update(pose, w, h, now, { bedZones = [], detectarBrazoArriba = false } = {}) {
     const events = [];
     const p = classifyPosture(pose, w, h, bedZones);
     const s = p.posture === 'acostada' && p.inBed ? 'cama' : p.posture;
+
+    // --- brazo levantado (pidiendo algo / llamando) ---
+    if (detectarBrazoArriba) {
+      const arriba = brazoLevantado(pose, w, h);
+      const bs = arriba ? 'arriba' : 'abajo';
+      if (bs !== this.brazoCand) { this.brazoCand = bs; this.brazoCandSince = now; }
+      if (bs !== this.brazoState && now - this.brazoCandSince >= this.brazoStableMs) {
+        const prevBrazo = this.brazoState;
+        this.brazoState = bs;
+        // Solo avisa en la transición de "abajo" a "arriba y sostenido": hubo un antes
+        // (brazo no levantado) y un después (se fue levantando hasta quedar arriba), no
+        // simplemente "está arriba" apenas se empieza a seguir a esta persona.
+        if (bs === 'arriba' && prevBrazo === 'abajo') events.push('pide_ayuda');
+      }
+    }
 
     // --- postura estable ---
     if (s !== 'desconocida') {

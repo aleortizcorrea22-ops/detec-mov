@@ -41,7 +41,7 @@ const els = {
   deviceName: $('deviceName'), deviceNameShowBtn: $('deviceNameShowBtn'), maxPeople: $('maxPeople'), detectFalls: $('detectFalls'), fallHoldS: $('fallHoldS'),
   fallVal: $('fallVal'), fallHoldField: $('fallHoldField'),
   alertSento: $('alertSento'), alertLevanto: $('alertLevanto'), alertCamaEntra: $('alertCamaEntra'), alertCamaSale: $('alertCamaSale'),
-  alertCamina: $('alertCamina'), alertQuieta: $('alertQuieta'), bedMarkBtn: $('bedMarkBtn'), bedClearBtn: $('bedClearBtn'), bedInfo: $('bedInfo'),
+  alertCamina: $('alertCamina'), alertQuieta: $('alertQuieta'), alertPideAyuda: $('alertPideAyuda'), bedMarkBtn: $('bedMarkBtn'), bedClearBtn: $('bedClearBtn'), bedInfo: $('bedInfo'),
 };
 
 // ---------------------------------------------------------------------------
@@ -52,7 +52,7 @@ const DEFAULTS = {
   model: 'full', includeFace: false, useHands: true, sendPhoto: true, beep: true, drawSkeleton: true, mirror: false, mirrorAuto: true, liveWebrtc: false, liveMicMuted: false, liveSoundMuted: false,
   deviceName: '', deviceNameAsked: false, maxPeople: 3, detectFalls: true, fallHoldS: 3,
   // Actividades: siempre se anotan en Eventos; a Telegram solo si se activa cada una.
-  alertSento: false, alertLevanto: false, alertCamaEntra: false, alertCamaSale: false, alertCamina: false, alertQuieta: false,
+  alertSento: false, alertLevanto: false, alertCamaEntra: false, alertCamaSale: false, alertCamina: false, alertQuieta: false, alertPideAyuda: false,
   bedZones: [],
 };
 const settings = { ...DEFAULTS, ...readSettings() };
@@ -638,7 +638,7 @@ function processFrame({ source, w, h }) {
     const pose = poses[p.index];
     const res = evaluateFrame(pose, handsByPose[p.index], w, h, { sensitivity: settings.sensitivity, includeFace: settings.includeFace });
     const touchState = p.track.touch.update(res.touching, now);
-    const act = p.track.act.update(pose, w, h, now, { bedZones: settings.bedZones });
+    const act = p.track.act.update(pose, w, h, now, { bedZones: settings.bedZones, detectarBrazoArriba: settings.alertPideAyuda });
     // Acostada en una zona marcada como cama no es una caída. Tampoco cuenta si esta
     // persona nunca estuvo parada o sentada antes: una caída real siempre tiene una
     // postura normal previa, así que "nacer" ya acostado (típico de un objeto confundido
@@ -844,7 +844,7 @@ function personPhoto(source, w, h, box) {
 // Actividades opcionales: se sentó, se levantó, cama, caminar, quieta.
 // Siempre quedan en "Eventos"; a Telegram solo si está marcada su casilla.
 
-const ACTIVITY_KEYS = ['alertSento', 'alertLevanto', 'alertCamaEntra', 'alertCamaSale', 'alertCamina', 'alertQuieta'];
+const ACTIVITY_KEYS = ['alertSento', 'alertLevanto', 'alertCamaEntra', 'alertCamaSale', 'alertCamina', 'alertQuieta', 'alertPideAyuda'];
 const ACTIVITIES = {
   sento: { key: 'alertSento', icon: '🪑', text: (q) => `${q} se sentó (silla o sillón)` },
   levanto: { key: 'alertLevanto', icon: '🧍', text: (q) => `${q} se levantó de la silla o sillón` },
@@ -852,6 +852,7 @@ const ACTIVITIES = {
   cama_sale: { key: 'alertCamaSale', icon: '🛏️', text: (q) => `${q} se levantó de la cama` },
   camina: { key: 'alertCamina', icon: '🚶', text: (q) => `${q} empezó a caminar` },
   quieta: { key: 'alertQuieta', icon: '⏸️', text: (q) => `${q} dejó de caminar y se quedó quieta` },
+  pide_ayuda: { key: 'alertPideAyuda', icon: '🙋', text: (q) => `${q} levantó el brazo (puede estar pidiendo algo)` },
 };
 
 async function onActivity(ev, person, total, w, h, source) {
