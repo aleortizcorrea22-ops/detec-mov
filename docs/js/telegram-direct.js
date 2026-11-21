@@ -38,11 +38,42 @@ async function call(token, method, body) {
   return data.result;
 }
 
-/** Si un chat_id guardado migró a supergrupo, lo reemplaza por el nuevo y lo guarda. */
+// Mismo servicio de licencias que usa licencia.js (no se importa de ahí para no armar
+// una dependencia circular entre los dos módulos); si en licencia.js se guarda otra URL
+// con saveLicenciaConfig(), esto la respeta leyendo la misma clave.
+const LICENCIA_CONFIG_KEY = 'detecmov.licencia.config';
+const LICENCIAS_BASE_URL_POR_DEFECTO = 'https://detecmov.axivenvirtual.com';
+
+function licenciasBaseUrl() {
+  try {
+    const c = JSON.parse(localStorage.getItem(LICENCIA_CONFIG_KEY) || '{}');
+    return String(c.baseUrl || LICENCIAS_BASE_URL_POR_DEFECTO).trim().replace(/\/$/, '');
+  } catch {
+    return LICENCIAS_BASE_URL_POR_DEFECTO;
+  }
+}
+
+/** Avisa sola al servicio de licencias que este sistema cambió de id, para que la
+ *  licencia se mueva sin que el administrador tenga que hacer nada a mano. Best-effort:
+ *  si no se pudo avisar ahora, el chat_id local ya quedó corregido y se puede reintentar
+ *  después (por ejemplo la próxima vez que se mande una alerta y vuelva a entrar aquí). */
+async function avisarMigracionAlServidor(idViejo, idNuevo) {
+  try {
+    await fetch(`${licenciasBaseUrl()}/api/migrar-id/${encodeURIComponent(idViejo)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idNuevo }),
+    });
+  } catch { /* sin conexión con el servicio de licencias ahora; no es grave, se reintenta solo */ }
+}
+
+/** Si un chat_id guardado migró a supergrupo, lo reemplaza por el nuevo, lo guarda, y
+ *  avisa sola al servicio de licencias para que mueva la licencia de ese sistema. */
 function reemplazarChatIdMigrado(chatIdViejo, chatIdNuevo) {
   const cfg = loadDirectConfig();
   const chatIds = cfg.chatIds.map((c) => (c === chatIdViejo ? chatIdNuevo : c));
   saveDirectConfig({ token: cfg.token, chatIds: chatIds.join(',') });
+  avisarMigracionAlServidor(chatIdViejo, chatIdNuevo);
   return chatIds;
 }
 
