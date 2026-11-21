@@ -23,6 +23,14 @@
     h1 { font-size: 16px; margin: 0; }
     p.vacio, p.hint { color: #9aa7ab; text-align: center; padding: 30px 20px; }
     .grilla { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; padding: 10px; }
+    .grilla.chica { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 6px; padding: 6px; }
+    .grilla.chica .tarjeta { border-width: 1px; border-radius: 8px; }
+    .grilla.chica .cabecera { padding: 4px 6px; font-size: 11px; }
+    .grilla.chica .toca-para-oir { font-size: 9px; padding: 2px 6px; }
+    .grilla.chica .estado { font-size: 10px; padding: 2px 6px; }
+    .grilla.chica .botones { padding: 4px; }
+    .grilla.chica .tarjeta button, .grilla.chica .tarjeta a.btn { font-size: 10px; padding: 4px; }
+    #zoomGrillaBtn { margin-left: auto; background: #374151; color: #fff; border: 0; border-radius: 8px; padding: 8px 12px; font: inherit; font-size: 13px; cursor: pointer; }
     .tarjeta { background: #121820; border: 2px solid #27313a; border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; }
     .tarjeta.escuchando { border-color: #0f766e; }
     .tarjeta .video-caja { cursor: pointer; }
@@ -47,6 +55,7 @@
       <div><b>A<span>X</span>IVEN</b><small>INGENIERÍA</small></div>
     </div>
     <h1>DETEC MOV — Varios en vivo</h1>
+    <button id="zoomGrillaBtn" type="button">🔳 Grilla chica</button>
   </header>
   <div id="contenido"></div>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
@@ -88,6 +97,17 @@
     grilla.className = 'grilla';
     contenido.appendChild(vacioMsg);
     contenido.appendChild(grilla);
+
+    // Grilla chica (miniaturas, para que entren varios vigías sin desplazar la
+    // pantalla) o grande (como estaba antes): se recuerda la elección en este navegador.
+    const zoomGrillaBtn = document.getElementById('zoomGrillaBtn');
+    function aplicarTamañoGrilla(chica) {
+      grilla.classList.toggle('chica', chica);
+      zoomGrillaBtn.textContent = chica ? '🔲 Grilla grande' : '🔳 Grilla chica';
+      try { localStorage.setItem('detecmov.multiver.grillaChica', chica ? '1' : '0'); } catch {}
+    }
+    zoomGrillaBtn.addEventListener('click', () => aplicarTamañoGrilla(!grilla.classList.contains('chica')));
+    aplicarTamañoGrilla((() => { try { return localStorage.getItem('detecmov.multiver.grillaChica') === '1'; } catch { return false; } })());
 
     const tarjetas = new Map(); // peerId -> { el, peer }
 
