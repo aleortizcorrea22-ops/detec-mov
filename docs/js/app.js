@@ -1,6 +1,11 @@
 import { evaluateFrame, P } from './rules.js';
 import { PeopleTracker, assignHands, poseBox, filtrarPosesDuplicadas } from './people.js';
 import { setupInstallButton } from './install.js';
+
+// Visible en pantalla (junto al nombre) para confirmar de un vistazo si el celular/PC ya
+// tiene la versión más nueva, sin tener que abrir herramientas de desarrollador. Se sube
+// junto con el VERSION de sw.js en cada cambio.
+const APP_VERSION = 'v60';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo, loadLicenciaConfig } from './licencia.js';
 import { iniciarPanelAdmin, NOMBRE_ADMIN_SECRETO } from './admin-panel.js';
@@ -1347,6 +1352,7 @@ document.addEventListener('visibilitychange', async () => {
   }
 });
 
+if ($('appVersion')) $('appVersion').textContent = APP_VERSION;
 bindSettings();
 refreshTelegramStatus();
 listDevices().catch(() => {});
