@@ -602,6 +602,7 @@ function loop() {
 let lastObjCheck = 0;
 let cachedPersonBoxes = null;
 let objSinPersonaDesde = 0;
+let lastDiagLog = 0;
 const OBJ_CHECK_MS = 300;
 
 /** ¿El recuadro de esta pose cae adentro (con margen) de algún "person" confirmado
@@ -622,6 +623,7 @@ function processFrame({ source, w, h }) {
 
   const poseRes = poseLandmarker.detectForVideo(source, ts);
   let poses = filtrarPosesDuplicadas(poseRes.landmarks || [], w, h);
+  const rawPoseCount = poses.length;
 
   // Verificación extra con un detector de objetos tipo COCO (misma familia que YOLO):
   // sabe distinguir "persona" de taza, mouse, teclado, lata, silla, etc., algo que el
@@ -657,6 +659,15 @@ function processFrame({ source, w, h }) {
   const hands = handRes?.landmarks || [];
   const handsByPose = assignHands(poses, hands, w, h);
   const now = Date.now();
+
+  // Diagnóstico: si no se ve a nadie, avisar si es porque el modelo de pose no ve ningún
+  // cuerpo (problema de cámara/luz/modelo) o porque el verificador extra lo está
+  // descartando (problema del verificador), para saber dónde está la falla real.
+  if (!poses.length && now - lastDiagLog > 6000) {
+    lastDiagLog = now;
+    if (rawPoseCount === 0) addLog('Diagnóstico: el detector de pose no ve ningún cuerpo en la imagen (puede ser cámara, luz o distancia).');
+    else addLog(`Diagnóstico: el detector de pose ve ${rawPoseCount} cuerpo(s), pero el verificador extra los descartó.`);
+  }
 
   // Evalúa a cada persona por separado.
   const list = people.update(poses, w, h, now).map((p) => {
