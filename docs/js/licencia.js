@@ -96,7 +96,10 @@ function actualizarCartel() {
   const acceso = accesoActual();
   el.hidden = acceso.permitido;
   if (!acceso.permitido) {
-    document.getElementById('licenciaBloqueoTexto').textContent = mensajeBloqueo(acceso.motivo);
+    const { id } = loadLicenciaConfig();
+    // El id se muestra para poder diagnosticar por teléfono/chat sin entrar al código:
+    // si no coincide con el que tiene el administrador, ese es el problema.
+    document.getElementById('licenciaBloqueoTexto').textContent = `${mensajeBloqueo(acceso.motivo)} (id de este aparato: ${id || 'sin configurar'})`;
   }
 }
 
