@@ -360,7 +360,8 @@ function stopSource() {
 let livePeer = null;
 let liveLinkSent = false;
 let liveMicStream = null;
-let liveAudioEl = null;
+let liveAudioEls = [];
+const audioElsPorCall = new Map();
 let activeCalls = [];
 
 function liveShareId() {
@@ -399,9 +400,14 @@ async function openLivePeer(id) {
     latidoPresencia = setInterval(() => reportarPresenciaEnVivo(id, nombreVisible()), 60 * 1000);
   });
   livePeer.on('call', async (call) => {
-    activeCalls.forEach((c) => c.close());
+    // No se cierran las llamadas anteriores: pueden mirar varias personas a la vez,
+    // cada una con su propia llamada, todas mandando la misma cámara.
     activeCalls.push(call);
-    call.on('close', () => { activeCalls = activeCalls.filter((c) => c !== call); });
+    call.on('close', () => {
+      activeCalls = activeCalls.filter((c) => c !== call);
+      const el = audioElsPorCall.get(call);
+      if (el) { el.remove(); liveAudioEls = liveAudioEls.filter((a) => a !== el); audioElsPorCall.delete(call); }
+    });
     let tracks = [...stream.getVideoTracks()];
     if (liveMicStream) {
       const micTrack = liveMicStream.getAudioTracks()[0];
@@ -409,14 +415,15 @@ async function openLivePeer(id) {
     }
     call.answer(new MediaStream(tracks));
     call.on('stream', (remoteStream) => {
-      // Lo que diga quien mira, para que lo escuche la persona.
-      if (!liveAudioEl) {
-        liveAudioEl = document.createElement('audio');
-        liveAudioEl.autoplay = true;
-        document.body.appendChild(liveAudioEl);
-      }
-      liveAudioEl.srcObject = remoteStream;
-      liveAudioEl.muted = !!settings.liveSoundMuted;
+      // Lo que diga quien mira, para que lo escuche la persona. Un <audio> por cada
+      // persona que mira, para que no se pisen si hablan varias a la vez.
+      const audioEl = document.createElement('audio');
+      audioEl.autoplay = true;
+      audioEl.muted = !!settings.liveSoundMuted;
+      audioEl.srcObject = remoteStream;
+      document.body.appendChild(audioEl);
+      liveAudioEls.push(audioEl);
+      audioElsPorCall.set(call, audioEl);
     });
   });
   livePeer.on('disconnected', () => {
@@ -453,7 +460,7 @@ async function startLiveShare() {
 function applyLiveMute() {
   const micTrack = liveMicStream?.getAudioTracks()[0];
   if (micTrack) micTrack.enabled = !settings.liveMicMuted;
-  if (liveAudioEl) liveAudioEl.muted = !!settings.liveSoundMuted;
+  liveAudioEls.forEach((el) => { el.muted = !!settings.liveSoundMuted; });
 }
 
 function stopLiveShare() {
@@ -463,7 +470,9 @@ function stopLiveShare() {
   if (latidoPresencia) { clearInterval(latidoPresencia); latidoPresencia = null; }
   liveMicStream?.getTracks().forEach((t) => t.stop());
   liveMicStream = null;
-  if (liveAudioEl) { liveAudioEl.remove(); liveAudioEl = null; }
+  liveAudioEls.forEach((el) => el.remove());
+  liveAudioEls = [];
+  audioElsPorCall.clear();
 }
 
 document.addEventListener('visibilitychange', () => {
