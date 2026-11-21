@@ -24,19 +24,6 @@
     #status { color: #9aa7ab; font-size: 14px; }
     .stage { position: relative; display: grid; place-items: center; padding: 10px; }
     video { max-width: 100%; max-height: calc(100vh - 60px); border-radius: 8px; background: #000; }
-    /* Alternativa cuando el navegador (p. ej. el de Telegram) no deja usar pantalla
-       completa real: agranda el video dentro de la misma página igual. */
-    body.zoom-manual { overflow: hidden; }
-    body.zoom-manual header { position: fixed; top: 0; left: 0; right: 0; }
-    body.zoom-manual .controles { position: fixed; bottom: 0; left: 0; right: 0; background: #0b0f10; z-index: 4; }
-    body.zoom-manual .stage { position: fixed; inset: 0; padding: 0; z-index: 1; }
-    body.zoom-manual video { max-height: 100vh; max-width: 100vw; border-radius: 0; }
-    body.zoom-manual p.hint { display: none; }
-    .btn-zoom {
-      position: absolute; right: 18px; bottom: 18px; z-index: 3;
-      width: 42px; height: 42px; padding: 0; font-size: 20px; line-height: 1;
-      border-radius: 50%; background: rgba(0,0,0,.55); color: #fff; border: none;
-    }
     .dot { width: 10px; height: 10px; border-radius: 50%; background: #666; display: inline-block; }
     .dot.live { background: #ef4444; animation: pulse 1.2s infinite; }
     @keyframes pulse { 50% { opacity: .4; } }
@@ -61,7 +48,6 @@
   </header>
   <div class="stage">
     <video id="video" playsinline autoplay muted></video>
-    <button id="zoomBtn" class="btn-zoom" type="button" title="Ver en toda la pantalla">⛶</button>
     <p id="hint" class="hint" hidden>Si no conecta, puede ser que el celular que vigila esté apagado, sin internet, o que la red de datos no permita la conexión directa (pasa con algunas compañías). Probá con Wi-Fi.</p>
   </div>
   <div class="controles">
@@ -78,7 +64,6 @@
     const sonidoBtn = document.getElementById('sonidoBtn');
     const hablarBtn = document.getElementById('hablarBtn');
     const dialogoBtn = document.getElementById('dialogoBtn');
-    const zoomBtn = document.getElementById('zoomBtn');
     const remoteId = location.hash.slice(1);
     const equipo = new URLSearchParams(location.search).get('n');
     if (equipo) { document.getElementById('equipo').textContent = `📍 ${equipo}`; document.title = `${equipo} · Ver en vivo`; }
@@ -87,23 +72,6 @@
       status.textContent = text;
       dot.classList.toggle('live', !!live);
     }
-
-    // Agranda el video dentro de la misma página (header y botones siguen visibles).
-    // No depende de la API de pantalla completa del navegador: esa API en el navegador
-    // propio de Telegram a veces no hace nada (ni error ni cambio), así que no se usa
-    // como único camino; esto con CSS funciona siempre, en cualquier navegador.
-    function actualizarBotonZoom() {
-      zoomBtn.textContent = document.body.classList.contains('zoom-manual') ? '🗗' : '⛶';
-    }
-    zoomBtn.addEventListener('click', () => {
-      document.body.classList.toggle('zoom-manual');
-      if (!document.body.classList.contains('zoom-manual') && document.fullscreenElement) {
-        document.exitFullscreen().catch(() => {});
-      } else if (document.body.classList.contains('zoom-manual') && document.documentElement.requestFullscreen) {
-        document.documentElement.requestFullscreen().catch(() => {});
-      }
-      actualizarBotonZoom();
-    });
 
     function actualizarBotonSonido() {
       sonidoBtn.textContent = video.muted ? '🔊 Activar sonido' : '🔇 Desactivar sonido';
@@ -115,14 +83,18 @@
     });
 
     // Mientras se habla (mantener apretado o modo diálogo) conviene que el sonido
-    // esté prendido para escuchar la respuesta, así que se activa solo si estaba
-    // apagado. No se vuelve a apagar solo al soltar: el botón de sonido sigue
-    // mandando, por si se quiere dejar escuchando después de hablar.
+    // esté prendido para escuchar la respuesta, así que se activa solo y se esconde
+    // el botón de sonido (no hace falta tocarlo); al soltar/cortar vuelve a pedir
+    // que se active a mano, como al principio.
     function hablando(activo) {
-      if (activo && video.muted) {
+      if (activo) {
         video.muted = false;
         video.play().catch(() => {});
+        sonidoBtn.hidden = true;
+      } else {
+        video.muted = true;
         actualizarBotonSonido();
+        sonidoBtn.hidden = false;
       }
     }
 
