@@ -1,10 +1,10 @@
 // Varias personas a la vez: numeración estable (Persona 1, 2…), a qué persona pertenece
 // cada mano, detección de "persona caída en el suelo" y el recuadro de cada persona
-// (para recortar la foto que se manda a Telegram). También sigue la postura (parada,
-// sentada, acostada/cama) y si está caminando, para las actividades opcionales.
+// (para recortar la foto que se manda a Telegram).
 // Funciones puras: se pueden probar sin navegador (ver test/people.test.mjs).
 
 import { P, TouchTracker } from './rules.js';
+
 
 const MIN_VIS = 0.55;
 const vis = (lm) => lm && (lm.visibility === undefined || lm.visibility >= MIN_VIS);
@@ -148,7 +148,7 @@ export function assignHands(poses, hands, w, h) {
 
 /**
  * Sigue a cada persona entre cuadros y le da un número estable (Persona 1, 2…).
- * Cada persona tiene su propio contador de "mano en la cabeza", "caída" y actividades,
+ * Cada persona tiene su propio contador de "mano en la cabeza" y de "caída",
  * así una alerta de la Persona 2 no se mezcla con la Persona 1.
  */
 export class PeopleTracker {
@@ -157,7 +157,7 @@ export class PeopleTracker {
     this.fallCfg = { holdMs: 2500, cooldownMs: 60000, graceMs: 2500, ...fall };
     this.forgetMs = forgetMs;
     this.maxJump = maxJump; // cuánto se puede mover entre cuadros, en "anchos de hombros"
-    this.tracks = []; // { id, x, y, size, lastSeen, touch, fall, act }
+    this.tracks = []; // { id, x, y, size, lastSeen, touch, fall }
   }
 
   configure({ touch, fall } = {}) {
@@ -237,16 +237,17 @@ export function brazoLevantado(pose, w, h) {
     const shP = px(sh, w, h);
     const wrP = px(wr, w, h);
     const otroHombro = pose[shIdx === P.L_SHOULDER ? P.R_SHOULDER : P.L_SHOULDER];
-    const anchoHombros = vis(otroHombro) ? dist(shP, px(otroHombro, w, h)) : null;
-    if (!anchoHombros || anchoHombros < 2) return false;
-    const muñecaArriba = (shP.y - wrP.y) > 0.8 * anchoHombros; // bastante por encima del hombro
-    if (!muñecaArriba) return false;
-    // Si se ve el codo, que también esté arriba (brazo estirado, no doblado al revés).
-    if (vis(el)) {
-      const elP = px(el, w, h);
-      if (elP.y > shP.y + 0.3 * anchoHombros) return false;
+    // Escala de referencia: preferí el ancho de hombros si se ven los dos; si no (de
+    // costado, encuadre cerrado), usá el recuadro de la persona como respaldo, así no
+    // se pierde la detección solo porque no entró el otro hombro en cámara.
+    let escala = vis(otroHombro) ? dist(shP, px(otroHombro, w, h)) : null;
+    if (!escala) {
+      const box = poseBox(pose, w, h);
+      escala = box ? box.h * 0.3 : null;
     }
-    return true;
+    if (!escala || escala < 2) return false;
+    // Mano bien por encima del hombro (no solo un poco, para no confundir con un gesto chico).
+    return (shP.y - wrP.y) > 0.5 * escala;
   };
   return lado(P.L_SHOULDER, P.L_ELBOW, P.L_WRIST) || lado(P.R_SHOULDER, P.R_ELBOW, P.R_WRIST);
 }
@@ -362,9 +363,6 @@ export class ActivityTracker {
       if (bs !== this.brazoState && now - this.brazoCandSince >= this.brazoStableMs) {
         const prevBrazo = this.brazoState;
         this.brazoState = bs;
-        // Solo avisa en la transición de "abajo" a "arriba y sostenido": hubo un antes
-        // (brazo no levantado) y un después (se fue levantando hasta quedar arriba), no
-        // simplemente "está arriba" apenas se empieza a seguir a esta persona.
         if (bs === 'arriba' && prevBrazo === 'abajo') events.push('pide_ayuda');
       }
     }

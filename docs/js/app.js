@@ -603,7 +603,7 @@ let lastObjCheck = 0;
 let cachedPersonBoxes = null;
 let objSinPersonaDesde = 0;
 let lastDiagLog = 0;
-const OBJ_CHECK_MS = 300;
+const OBJ_CHECK_MS = 700;
 
 /** ¿El recuadro de esta pose cae adentro (con margen) de algún "person" confirmado
  * por el detector de objetos? Si no hay margen de superposición, no se confía en la pose. */
