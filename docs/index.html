@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>DETEC MOV</title>
+  <meta name="description" content="Detecta cuando la persona se toca o rasca la cabeza y avisa por Telegram.">
+  <meta name="theme-color" content="#0f766e">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="DETEC MOV">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@800&display=swap">
+  <script src="js/qrcode-lib.js"></script>
+</head>
+<body>
+  <div id="licenciaBloqueo" class="licencia-bloqueo" hidden role="alertdialog" aria-live="assertive">
+    <div class="licencia-bloqueo-caja">
+      <h2>🔒 Servicio no disponible</h2>
+      <p id="licenciaBloqueoTexto">El servicio venció. Contactá al administrador para renovarlo.</p>
+    </div>
+  </div>
+
+  <header class="topbar">
+    <div class="axiven-brand">
+      <img src="icons/axiven-logo.svg" alt="Logo AXIVEN">
+      <div><b>A<span>X</span>IVEN</b><small>INGENIERÍA</small></div>
+    </div>
+    <div class="brand">
+      <img src="icons/icon-192.png" alt="" width="32" height="32">
+      <span>DETEC MOV</span>
+    </div>
+    <a href="manual.html" class="btn" target="_blank" rel="noopener">Manual para el usuario</a>
+    <button id="compartirBtn" class="btn" title="Mandar la aplicación a una familia nueva">📲 Compartir app</button>
+    <button id="installBtn" class="btn btn-install" hidden>Instalar</button>
+    <button id="shutdownBtn" class="btn btn-danger btn-chico" aria-label="Apagar sistema" title="Apagar sistema (apaga el programa, incluida la vigilancia en segundo plano)">⏻</button>
+  </header>
+
+  <div id="compartirFondo" class="licencia-bloqueo" hidden onclick="if(event.target===this) document.getElementById('compartirFondo').hidden=true">
+    <div class="licencia-bloqueo-caja" style="max-width:320px;text-align:center">
+      <h2>📲 Compartir la aplicación</h2>
+      <p>Mandale este enlace a una familia nueva para que instale DETEC MOV, o que escaneen el código QR con la cámara del celular.</p>
+      <p style="font:700 14px ui-monospace,Consolas,monospace;word-break:break-all;background:var(--code-bg,#eee);color:#111;padding:8px;border-radius:6px">https://aleortizcorrea22-ops.github.io/detec-mov/</p>
+      <div id="compartirQr" style="margin:10px 0"></div>
+      <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+        <button type="button" id="compartirNativoBtn" class="btn" hidden>Compartir…</button>
+        <button type="button" id="compartirCopiarBtn" class="btn">Copiar enlace</button>
+        <button type="button" class="btn" onclick="document.getElementById('compartirFondo').hidden=true">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <main>
+    <section class="stage">
+      <div id="viewer" class="viewer">
+        <video id="video" playsinline muted autoplay></video>
+        <img id="ipImg" alt="" crossorigin="anonymous" hidden>
+        <canvas id="overlay"></canvas>
+        <div id="placeholder" class="placeholder"><span>Elige una cámara y presiona <b>Iniciar</b></span></div>
+        <div id="banner" class="banner" hidden>⚠️ Se tocó la cabeza</div>
+        <button type="button" id="pantallaCompletaBtn" class="btn btn-zoom" title="Ver en pantalla completa, para ubicar bien la cámara">⛶</button>
+      </div>
+      <div class="statusbar">
+        <span id="statusDot" class="dot"></span>
+        <span id="statusText">Detenido</span>
+        <span class="spacer"></span>
+        <span id="fps" class="muted"></span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Este equipo</h2>
+      <label class="field">
+        <span>Nombre de este equipo (aparece en cada aviso de Telegram)</span>
+        <div style="display:flex;gap:.4rem">
+          <input id="deviceName" type="password" maxlength="40" autocomplete="off" placeholder="Ej.: Equipo 1 · Dormitorio de la abuela" style="flex:1">
+          <button type="button" id="deviceNameShowBtn" class="btn">Ver</button>
+        </div>
+      </label>
+
+      <h2>Cámara</h2>
+      <label class="field">
+        <span>Fuente</span>
+        <select id="sourceType">
+          <option value="device">Cámara del equipo / Iriun Webcam</option>
+          <option value="mjpeg">Cámara IP (stream MJPEG por HTTP)</option>
+          <option value="snapshot">Cámara IP (foto JPG por HTTP)</option>
+        </select>
+      </label>
+      <label class="field" id="deviceField">
+        <span>Dispositivo</span>
+        <select id="deviceSelect"><option value="">Cámara trasera</option><option value="front">Cámara delantera</option></select>
+      </label>
+      <label class="field" id="urlField" hidden>
+        <span>URL de la cámara</span>
+        <input id="cameraUrl" type="url" placeholder="http://192.168.1.50:8080/video" autocomplete="off">
+        <small class="muted">Ej.: app "IP Webcam" de Android → <code>http://IP:8080/video</code> (MJPEG) o <code>http://IP:8080/shot.jpg</code> (foto).</small>
+      </label>
+      <div class="row">
+        <button id="startBtn" class="btn btn-primary">Iniciar</button>
+        <button id="stopBtn" class="btn" disabled>Detener</button>
+      </div>
+      <div id="liveAudioRow">
+        <p class="muted" style="margin:10px 0 4px">Audio en vivo</p>
+        <div class="row">
+          <button id="liveMicBtn" class="btn" hidden>🎤 Silenciar micrófono</button>
+          <button id="liveSoundBtn" class="btn" hidden>🔈 Silenciar sonido</button>
+        </div>
+      </div>
+
+      <h2>Detección</h2>
+      <label class="field">
+        <span>Sensibilidad (tamaño de la zona de la cabeza): <b id="sensVal"></b></span>
+        <input id="sensitivity" type="range" min="0.6" max="1.6" step="0.05">
+      </label>
+      <label class="field">
+        <span>Cuánto tiempo con la mano en la cabeza antes de avisar: <b id="holdVal"></b></span>
+        <input id="holdMs" type="range" min="200" max="3000" step="100">
+      </label>
+      <p class="muted" style="margin:-4px 0 8px;font-size:.85em">Más alto = evita avisos por un toque rápido sin querer; más bajo = avisa más rápido.</p>
+      <label class="field">
+        <span>Espera entre alertas: <b id="coolVal"></b></span>
+        <input id="cooldownS" type="range" min="5" max="300" step="5">
+      </label>
+      <label class="field">
+        <span>Modelo de pose</span>
+        <select id="model">
+          <option value="lite">Liviano (más rápido, celulares)</option>
+          <option value="full">Completo (recomendado)</option>
+          <option value="heavy">Pesado (mejor de lejos, más lento)</option>
+        </select>
+      </label>
+      <label class="check"><input id="includeFace" type="checkbox"> Contar también tocarse la cara (ojos, nariz, mejillas, boca, mentón)</label>
+      <label class="field">
+        <span>Cuántas personas puede seguir a la vez (más = más lento)</span>
+        <input id="maxPeople" type="number" min="1" max="6" step="1" inputmode="numeric">
+      </label>
+      <label class="check"><input id="detectFalls" type="checkbox"> Detectar si una persona está caída en el suelo</label>
+      <label class="field" id="fallHoldField">
+        <span>Tiempo en el suelo antes de avisar: <b id="fallVal"></b></span>
+        <input id="fallHoldS" type="range" min="1" max="15" step="1">
+      </label>
+
+      <h2>Camas</h2>
+      <p id="bedInfo" class="muted"></p>
+      <div class="row">
+        <button id="bedMarkBtn" class="btn" type="button">🛏️ Marcar una cama</button>
+        <button id="bedClearBtn" class="btn" type="button">Borrar camas</button>
+      </div>
+
+      <h2>Otros avisos (opcionales)</h2>
+      <p class="muted">Siempre se anotan en Eventos. Marque cuáles quiere recibir también por Telegram:</p>
+      <label class="check"><input id="alertSento" type="checkbox"> 🪑 Se sentó en una silla o sillón</label>
+      <label class="check"><input id="alertLevanto" type="checkbox"> 🧍 Se levantó de la silla o sillón</label>
+      <label class="check"><input id="alertCamaEntra" type="checkbox"> 🛏️ Se acostó en la cama</label>
+      <label class="check"><input id="alertCamaSale" type="checkbox"> 🛏️ Se levantó de la cama</label>
+      <label class="check"><input id="alertCamina" type="checkbox"> 🚶 Empezó a caminar</label>
+      <label class="check"><input id="alertQuieta" type="checkbox"> ⏸️ Dejó de caminar y se quedó quieta</label>
+      <label class="check"><input id="useHands" type="checkbox"> Detectar también los dedos de la mano (más preciso de cerca)</label>
+      <label class="check"><input id="sendPhoto" type="checkbox"> Enviar foto con la alerta</label>
+      <label class="check"><input id="beep" type="checkbox"> Sonido en este equipo al detectar</label>
+      <label class="check"><input id="drawSkeleton" type="checkbox"> Dibujar esqueleto</label>
+      <label class="check"><input id="mirror" type="checkbox"> Espejar el video (como un espejo)</label>
+      <p class="muted" style="margin:-4px 0 8px;font-size:.85em">Se pone solo según la cámara (delantera = espejo, trasera = normal); tocá la casilla si querés elegirlo vos.</p>
+      <label class="check"><input id="liveWebrtc" type="checkbox"> Permitir ver esta cámara en vivo desde otro celular (manda un link por Telegram, sin servidor)</label>
+
+      <h2>Telegram</h2>
+      <p id="tgStatus" class="muted">Comprobando…</p>
+      <div id="directTelegramFields" hidden>
+        <label class="field">
+          <span>Token del bot (@BotFather)</span>
+          <input id="directToken" type="password" autocomplete="off" placeholder="123456789:AA...">
+        </label>
+        <label class="field">
+          <span>Chat ID(s) (separados por coma)</span>
+          <input id="directChatIds" type="text" autocomplete="off" placeholder="6500515383">
+        </label>
+        <button id="saveDirectBtn" class="btn">Guardar</button>
+        <small class="muted">Queda guardado solo en este aparato, no se manda a ningún servidor.</small>
+      </div>
+      <div class="row">
+        <button id="testBtn" class="btn">Enviar alerta de prueba</button>
+        <button id="findChatBtn" class="btn">Buscar mi chat_id</button>
+      </div>
+      <pre id="chatList" class="mono" hidden></pre>
+
+      <h2>Eventos</h2>
+      <ul id="log" class="log"></ul>
+    </section>
+
+    <section class="panel" id="panelAdmin" hidden>
+      <h2>Panel de administrador</h2>
+
+      <details style="border:1px solid var(--border);border-radius:10px;padding:8px 12px;margin-bottom:12px">
+        <summary style="cursor:pointer;font-weight:700">📘 Guía: cómo dar de alta un sistema nuevo</summary>
+        <div style="font-size:.9em;margin-top:8px">
+          <h3>1. Crear el bot de Telegram</h3>
+          <ol style="padding-left:1.1rem">
+            <li>Buscá <b>@BotFather</b> en Telegram y escribile <code>/newbot</code>.</li>
+            <li>Elegí un nombre (ej. "DETEC MOV Familia Pérez") y un usuario que termine en <code>bot</code>.</li>
+            <li>Te da un mensaje con el <b>token</b> (debajo de "Use this token..."). Copialo.</li>
+          </ol>
+          <p class="muted">Un bot nuevo por cada familia, nunca reutilices uno.</p>
+
+          <h3>2. Crear el grupo</h3>
+          <ol style="padding-left:1.1rem">
+            <li>Creá un grupo nuevo en Telegram y agregale el bot.</li>
+            <li>Agregate vos también.</li>
+            <li>Mandá <code>/start@usuario_del_bot</code> en el grupo (hace falta para que el bot "vea" el grupo).</li>
+          </ol>
+
+          <h3>3. Conseguir el chat_id</h3>
+          <p>Lo más fácil: pegá el token en cualquier celular con la app abierta (sección Telegram) y tocá <b>"Buscar mi chat_id"</b>. El del grupo empieza con <code>-100</code>.</p>
+
+          <h3>4. Dar de alta el sistema acá abajo</h3>
+          <p>En "Dar de alta un sistema nuevo": ID = el chat_id, Nombre = como quieras identificarlo, Usuario del bot y Token = del paso 1, Días = cuánto dura el permiso.</p>
+
+          <h3>5. Mandar el manual a la familia</h3>
+          <p>Desde tu PC, abrí <code>manual-detec-mov.html</code>, pegá el token y chat_id en el recuadro violeta, y descargá la copia lista para enviar por Telegram o WhatsApp.</p>
+
+          <h3>6. Probar</h3>
+          <p>Pedile a la familia que toque "Enviar alerta de prueba" y confirmá que te llegue al grupo.</p>
+        </div>
+      </details>
+
+      <p id="paHint" class="muted" style="font-size:.8em"></p>
+      <div id="paLoginBox">
+        <label class="field">
+          <span>Clave de administrador</span>
+          <div style="display:flex;gap:.4rem">
+            <input id="paClave" type="password" autocomplete="current-password" style="flex:1">
+            <button type="button" id="paClaveShowBtn" class="btn">Ver</button>
+          </div>
+        </label>
+        <button type="button" id="paEntrar" class="btn">Entrar</button>
+      </div>
+      <p id="paMsg" class="muted"></p>
+      <p id="paVerVariosCaja"><a id="paVerVarios" class="btn" target="_blank" rel="noopener" hidden>📺 Ver varios en vivo</a></p>
+      <div class="tbl">
+        <table id="paTabla">
+          <thead><tr><th>Nombre</th><th>Estado</th><th>Vence</th><th>Días</th><th>Acción</th><th>En vivo</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <h3>Dar de alta un sistema nuevo</h3>
+      <div class="row">
+        <input id="paNId" placeholder="id (chat_id)">
+        <input id="paNNombre" placeholder="nombre">
+        <input id="paNDias" type="number" value="30" style="width:70px">
+        <button type="button" id="paCrear" class="btn">Crear</button>
+      </div>
+      <p class="muted" style="font-size:.8em">Para ver tokens, QR, o fijar una fecha exacta, usá el panel completo: detecmov.axivenvirtual.com/admin</p>
+    </section>
+  </main>
+
+  <dialog id="iosDialog">
+    <h3>Instalar en iPhone / iPad</h3>
+    <ol>
+      <li>Abre esta página en <b>Safari</b>.</li>
+      <li>Toca el botón <b>Compartir</b> (cuadrado con flecha).</li>
+      <li>Elige <b>Agregar a pantalla de inicio</b>.</li>
+    </ol>
+    <form method="dialog"><button class="btn btn-primary">Entendido</button></form>
+  </dialog>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

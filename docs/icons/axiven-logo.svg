@@ -1,0 +1,113 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="logo" viewBox="0 0 240 240" role="img" aria-label="Axiven">
+          <defs>
+            <!-- Gradiente cilindrico para brazo blanco: perp. al trazo 45deg -> grad 135deg -->
+            <linearGradient id="g-ax" x1="100" y1="140" x2="140" y2="100" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stop-color="#2e4455"/>
+              <stop offset="36%" stop-color="#c0d8ee"/>
+              <stop offset="52%" stop-color="#ffffff"/>
+              <stop offset="78%" stop-color="#d0e4f4"/>
+              <stop offset="100%" stop-color="#1e3040"/>
+            </linearGradient>
+            <!-- Gradiente cilindrico para brazo naranja: perp. al trazo 135deg -> grad 45deg -->
+            <linearGradient id="g-tr" x1="100" y1="100" x2="140" y2="140" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stop-color="#5a1e00"/>
+              <stop offset="36%" stop-color="#e06010"/>
+              <stop offset="52%" stop-color="#ffb050"/>
+              <stop offset="78%" stop-color="#e07020"/>
+              <stop offset="100%" stop-color="#3a1000"/>
+            </linearGradient>
+            <!-- Esfera naranja para nodos -->
+            <radialGradient id="g-node" cx="36%" cy="30%" r="58%">
+              <stop offset="0%" stop-color="#ffd898"/>
+              <stop offset="42%" stop-color="#FF8A2B"/>
+              <stop offset="100%" stop-color="#6a1e00"/>
+            </radialGradient>
+            <!-- Esfera blanca para centro -->
+            <radialGradient id="g-core" cx="36%" cy="30%" r="58%">
+              <stop offset="0%" stop-color="#ffffff"/>
+              <stop offset="55%" stop-color="#c8dde8"/>
+              <stop offset="100%" stop-color="#4a6070"/>
+            </radialGradient>
+            <!-- Esfera naranja interior -->
+            <radialGradient id="g-dot" cx="36%" cy="30%" r="58%">
+              <stop offset="0%" stop-color="#ffc060"/>
+              <stop offset="60%" stop-color="#FF8A2B"/>
+              <stop offset="100%" stop-color="#5a1800"/>
+            </radialGradient>
+            <!-- Sombra de profundidad -->
+            <filter id="f-sh" x="-18%" y="-18%" width="136%" height="136%">
+              <feDropShadow dx="3" dy="5" stdDeviation="3.5" flood-color="rgba(0,0,0,0.55)"/>
+            </filter>
+          </defs>
+          <!-- Brazo blanco 3D (tubo cilindrico) -->
+          <path class="ax" d="M58 58L182 182" fill="none" stroke="url(#g-ax)" stroke-width="30" stroke-linecap="round" filter="url(#f-sh)"/>
+          <!-- Ranuras sobre el brazo -->
+          <g class="slots" stroke="#78bce0" stroke-width="5" stroke-linecap="round">
+            <path d="M76.7 99.3L99.3 76.7"/><path d="M140.7 163.3L163.3 140.7"/>
+          </g>
+          <!-- Pista naranja de placa electronica (PCB trace) -->
+          <path class="tr" id="tracePath" d="M182 58L58 182" fill="none" stroke="url(#g-tr)" stroke-width="8" stroke-linecap="square" filter="url(#f-sh)"/>
+          <!-- Pad PCB n1 con taladro (via/through-hole) -->
+          <g class="node n1" filter="url(#f-sh)">
+            <circle cx="182" cy="58" r="17" fill="url(#g-node)"/>
+            <circle cx="182" cy="58" r="7" fill="#060f1c"/>
+            <circle cx="182" cy="58" r="7" fill="none" stroke="rgba(255,180,80,0.7)" stroke-width="1.5"/>
+          </g>
+          <g class="node n2" filter="url(#f-sh)">
+            <circle cx="58" cy="182" r="17" fill="url(#g-node)"/>
+            <circle cx="58" cy="182" r="7" fill="#060f1c"/>
+            <circle cx="58" cy="182" r="7" fill="none" stroke="rgba(255,180,80,0.7)" stroke-width="1.5"/>
+          </g>
+          <!-- Centro: via de PCB con taladro -->
+          <g class="core" filter="url(#f-sh)">
+            <circle cx="120" cy="120" r="25" fill="url(#g-core)"/>
+            <circle cx="120" cy="120" r="9" fill="#060f1c"/>
+            <circle cx="120" cy="120" r="9" fill="none" stroke="rgba(160,210,255,0.55)" stroke-width="1.5"/>
+          </g>
+          <!-- Señal cuadrada digital fluyendo por el brazo naranja superior (hacia pad n1) -->
+          <g transform="translate(120,120) rotate(-45)" fill="none" stroke="#FF8A2B" stroke-width="3" stroke-linecap="square" stroke-linejoin="miter">
+            <path d="M6 0 L6 -10 L18 -10 L18 10 L30 10 L30 -10 L42 -10 L42 10 L54 10 L54 -10 L66 -10 L66 10 L78 10 L78 -10 L88 -10 L88 0" stroke-dasharray="7 9">
+              <animate attributeName="stroke-dashoffset" from="0" to="-18" dur="0.6s" repeatCount="indefinite"/>
+            </path>
+          </g>
+          <!-- Solenoide envolviendo el brazo naranja inferior (hacia pad n2) -->
+          <g transform="translate(120,120) rotate(-45)" fill="none" stroke="#FF8A2B" stroke-width="3" stroke-linecap="round">
+            <path d="M-6 0 Q-12 -20 -18 0 Q-24 20 -30 0 Q-36 -20 -42 0 Q-48 20 -54 0 Q-60 -20 -66 0 Q-72 20 -78 0 Q-82 0" stroke-dasharray="5 8">
+              <animate attributeName="stroke-dashoffset" from="13" to="0" dur="0.7s" repeatCount="indefinite"/>
+            </path>
+          </g>
+          <!-- Engranaje extremo superior-izq del brazo blanco -->
+          <g transform="translate(58,58)">
+            <g>
+              <animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="7s" repeatCount="indefinite"/>
+              <circle r="11" fill="#e8f4ff" stroke="#78bce0" stroke-width="2.5"/>
+              <circle r="6" fill="#d8ecfa" stroke="#78bce0" stroke-width="1.5"/>
+              <circle r="2.5" fill="#90ccee"/>
+              <rect x="-2" y="-14.5" width="4" height="3.8" fill="#78bce0" transform="rotate(0)"/>
+              <rect x="-2" y="-14.5" width="4" height="3.8" fill="#78bce0" transform="rotate(45)"/>
+              <rect x="-2" y="-14.5" width="4" height="3.8" fill="#78bce0" transform="rotate(90)"/>
+              <rect x="-2" y="-14.5" width="4" height="3.8" fill="#78bce0" transform="rotate(135)"/>
+              <rect x="-2" y="-14.5" width="4" height="3.8" fill="#78bce0" transform="rotate(180)"/>
+              <rect x="-2" y="-14.5" width="4" height="3.8" fill="#78bce0" transform="rotate(225)"/>
+              <rect x="-2" y="-14.5" width="4" height="3.8" fill="#78bce0" transform="rotate(270)"/>
+              <rect x="-2" y="-14.5" width="4" height="3.8" fill="#78bce0" transform="rotate(315)"/>
+            </g>
+          </g>
+          <!-- Engranaje extremo inferior-der del brazo blanco (gira inverso) -->
+          <g transform="translate(182,182)">
+            <g>
+              <animateTransform attributeName="transform" type="rotate" from="360" to="0" dur="7s" repeatCount="indefinite"/>
+              <circle r="11" fill="#e8f4ff" stroke="#78bce0" stroke-width="2.5"/>
+              <circle r="6" fill="#d8ecfa" stroke="#78bce0" stroke-width="1.5"/>
+              <circle r="2.5" fill="#90ccee"/>
+              <rect x="-2" y="-14.5" width="4" height="3.8" fill="#78bce0" transform="rotate(0)"/>
+              <rect x="-2" y="-14.5" width="4" height="3.8" fill="#78bce0" transform="rotate(45)"/>
+              <rect x="-2" y="-14.5" width="4" height="3.8" fill="#78bce0" transform="rotate(90)"/>
+              <rect x="-2" y="-14.5" width="4" height="3.8" fill="#78bce0" transform="rotate(135)"/>
+              <rect x="-2" y="-14.5" width="4" height="3.8" fill="#78bce0" transform="rotate(180)"/>
+              <rect x="-2" y="-14.5" width="4" height="3.8" fill="#78bce0" transform="rotate(225)"/>
+              <rect x="-2" y="-14.5" width="4" height="3.8" fill="#78bce0" transform="rotate(270)"/>
+              <rect x="-2" y="-14.5" width="4" height="3.8" fill="#78bce0" transform="rotate(315)"/>
+            </g>
+          </g>
+        </svg>
