@@ -44,7 +44,8 @@ const els = {
   alertCamina: $('alertCamina'), alertQuieta: $('alertQuieta'), alertPideAyuda: $('alertPideAyuda'), bedMarkBtn: $('bedMarkBtn'), bedClearBtn: $('bedClearBtn'), bedInfo: $('bedInfo'),
   watchZoneEnter: $('watchZoneEnter'), watchZoneExit: $('watchZoneExit'), watchZoneInside: $('watchZoneInside'), watchZoneOutside: $('watchZoneOutside'),
   watchZoneMarkBtn: $('watchZoneMarkBtn'), watchZoneClearBtn: $('watchZoneClearBtn'), watchZoneResetBtn: $('watchZoneResetBtn'), watchZoneInfo: $('watchZoneInfo'),
-  watchDwellInS: $('watchDwellInS'), watchDwellInVal: $('watchDwellInVal'), watchDwellOutS: $('watchDwellOutS'), watchDwellOutVal: $('watchDwellOutVal'),
+  watchDwellInS: $('watchDwellInS'), watchDwellInVal: $('watchDwellInVal'), watchDwellInUnit: $('watchDwellInUnit'),
+  watchDwellOutS: $('watchDwellOutS'), watchDwellOutVal: $('watchDwellOutVal'), watchDwellOutUnit: $('watchDwellOutUnit'),
 };
 
 // ---------------------------------------------------------------------------
@@ -58,8 +59,13 @@ const DEFAULTS = {
   alertSento: false, alertLevanto: false, alertCamaEntra: false, alertCamaSale: false, alertCamina: false, alertQuieta: false, alertPideAyuda: false,
   bedZones: [],
   watchZoneEnter: false, watchZoneExit: false, watchZoneInside: false, watchZoneOutside: false,
-  watchZones: [], watchDwellInS: 10, watchDwellOutS: 30,
+  watchZones: [], watchDwellInS: 10, watchDwellInUnit: 's', watchDwellOutS: 30, watchDwellOutUnit: 's',
 };
+
+// Unidad de los tiempos de zona: el usuario elige segundos, minutos u horas; la barra
+// siempre va de 1 a 120 "unidades", así no hace falta una barra gigante para horas.
+const UNIT_MS = { s: 1000, m: 60000, h: 3600000 };
+const UNIT_LABEL = { s: 's', m: 'min', h: 'h' };
 const settings = { ...DEFAULTS, ...readSettings() };
 
 function readSettings() {
@@ -94,6 +100,8 @@ function bindSettings() {
   els.fallHoldS.value = settings.fallHoldS;
   els.watchDwellInS.value = settings.watchDwellInS;
   els.watchDwellOutS.value = settings.watchDwellOutS;
+  els.watchDwellInUnit.value = settings.watchDwellInUnit;
+  els.watchDwellOutUnit.value = settings.watchDwellOutUnit;
 
   const refresh = () => {
     els.sensVal.textContent = `${Math.round(settings.sensitivity * 100)}%`;
@@ -104,8 +112,8 @@ function bindSettings() {
     els.deviceField.hidden = ip;
     els.fallVal.textContent = `${settings.fallHoldS} s`;
     els.fallHoldField.hidden = !settings.detectFalls;
-    els.watchDwellInVal.textContent = `${settings.watchDwellInS} s`;
-    els.watchDwellOutVal.textContent = `${settings.watchDwellOutS} s`;
+    els.watchDwellInVal.textContent = `${settings.watchDwellInS} ${UNIT_LABEL[settings.watchDwellInUnit]}`;
+    els.watchDwellOutVal.textContent = `${settings.watchDwellOutS} ${UNIT_LABEL[settings.watchDwellOutUnit]}`;
     refreshWatchZoneInfo();
     people.configure({
       touch: { holdMs: settings.holdMs, cooldownMs: settings.cooldownS * 1000 },
@@ -155,6 +163,8 @@ function bindSettings() {
   on(els.watchZoneOutside, 'watchZoneOutside');
   on(els.watchDwellInS, 'watchDwellInS', Number);
   on(els.watchDwellOutS, 'watchDwellOutS', Number);
+  on(els.watchDwellInUnit, 'watchDwellInUnit');
+  on(els.watchDwellOutUnit, 'watchDwellOutUnit');
   on(els.deviceName, 'deviceName', (v) => v.slice(0, 40));
   els.deviceName.addEventListener('input', () => { settings.deviceNameAsked = true; saveSettings(); });
   els.deviceNameShowBtn.addEventListener('click', () => {
@@ -688,8 +698,8 @@ function processFrame({ source, w, h }) {
       detectarBrazoArriba: settings.alertPideAyuda,
       watchZones: watchAny ? settings.watchZones : [],
       watchEnter: settings.watchZoneEnter, watchExit: settings.watchZoneExit,
-      watchInsideMs: settings.watchZoneInside ? settings.watchDwellInS * 1000 : null,
-      watchOutsideMs: settings.watchZoneOutside ? settings.watchDwellOutS * 1000 : null,
+      watchInsideMs: settings.watchZoneInside ? settings.watchDwellInS * UNIT_MS[settings.watchDwellInUnit] : null,
+      watchOutsideMs: settings.watchZoneOutside ? settings.watchDwellOutS * UNIT_MS[settings.watchDwellOutUnit] : null,
     });
     // Acostada en una zona marcada como cama no es una caída. Tampoco cuenta si esta
     // persona nunca estuvo parada o sentada antes: una caída real siempre tiene una
@@ -909,8 +919,8 @@ const ACTIVITIES = {
   pide_ayuda: { key: 'alertPideAyuda', icon: '🙋', text: (q) => `${q} levantó el brazo (puede estar pidiendo algo)` },
   zona_entra: { key: 'watchZoneEnter', icon: '📍', text: (q, p) => `${q} entró a la zona marcada (por ${p.zoneLastSide || '?'}) · entradas: ${p.zoneEnterCount}` },
   zona_sale: { key: 'watchZoneExit', icon: '📍', text: (q, p) => `${q} salió de la zona marcada (por ${p.zoneLastSide || '?'}) · salidas: ${p.zoneExitCount}` },
-  zona_tiempo_dentro: { key: 'watchZoneInside', icon: '⏱️', text: (q, p) => `${q} lleva ${p.zoneElapsedS} s adentro de la zona marcada (configurado: ${settings.watchDwellInS} s)` },
-  zona_tiempo_fuera: { key: 'watchZoneOutside', icon: '⏱️', text: (q, p) => `${q} lleva ${p.zoneElapsedS} s afuera de la zona marcada (configurado: ${settings.watchDwellOutS} s)` },
+  zona_tiempo_dentro: { key: 'watchZoneInside', icon: '⏱️', text: (q, p) => `${q} lleva ${p.zoneElapsedS} s adentro de la zona marcada (configurado: ${settings.watchDwellInS} ${UNIT_LABEL[settings.watchDwellInUnit]})` },
+  zona_tiempo_fuera: { key: 'watchZoneOutside', icon: '⏱️', text: (q, p) => `${q} lleva ${p.zoneElapsedS} s afuera de la zona marcada (configurado: ${settings.watchDwellOutS} ${UNIT_LABEL[settings.watchDwellOutUnit]})` },
 };
 
 async function onActivity(ev, person, total, w, h, source) {

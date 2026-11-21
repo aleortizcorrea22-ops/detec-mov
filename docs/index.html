@@ -160,12 +160,20 @@
       <label class="check"><input id="watchZoneInside" type="checkbox"> ⏱️ Avisar si lleva mucho tiempo ADENTRO de la zona</label>
       <label class="field">
         <span>Tiempo adentro antes de avisar: <b id="watchDwellInVal"></b></span>
-        <input id="watchDwellInS" type="range" min="1" max="300" step="1">
+        <input id="watchDwellInS" type="range" min="1" max="120" step="1">
+      </label>
+      <label class="field">
+        <span>Unidad del tiempo adentro</span>
+        <select id="watchDwellInUnit"><option value="s">Segundos</option><option value="m">Minutos</option><option value="h">Horas</option></select>
       </label>
       <label class="check"><input id="watchZoneOutside" type="checkbox"> ⏱️ Avisar si lleva mucho tiempo AFUERA de la zona</label>
       <label class="field">
         <span>Tiempo afuera antes de avisar: <b id="watchDwellOutVal"></b></span>
-        <input id="watchDwellOutS" type="range" min="1" max="600" step="1">
+        <input id="watchDwellOutS" type="range" min="1" max="120" step="1">
+      </label>
+      <label class="field">
+        <span>Unidad del tiempo afuera</span>
+        <select id="watchDwellOutUnit"><option value="s">Segundos</option><option value="m">Minutos</option><option value="h">Horas</option></select>
       </label>
       <p id="watchZoneInfo" class="muted"></p>
       <div class="row">
