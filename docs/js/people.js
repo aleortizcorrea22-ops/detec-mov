@@ -303,7 +303,7 @@ export function classifyPosture(pose, w, h, bedZones = []) {
  * Cada cambio tiene que mantenerse un rato (stableMs) para no avisar por un movimiento suelto.
  */
 export class ActivityTracker {
-  constructor({ stableMs = 1500, walkSpeed = 0.7, stillSpeed = 0.15, stillMs = 3000, windowMs = 1500, brazoStableMs = 1200 } = {}) {
+  constructor({ stableMs = 1500, walkSpeed = 0.7, stillSpeed = 0.15, stillMs = 3000, windowMs = 1500, brazoStableMs = 500 } = {}) {
     Object.assign(this, { stableMs, walkSpeed, stillSpeed, stillMs, windowMs, brazoStableMs });
     this.state = null; // 'parada' | 'sentada' | 'acostada' | 'cama'
     this.cand = null;
