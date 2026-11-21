@@ -42,6 +42,8 @@ const els = {
   fallVal: $('fallVal'), fallHoldField: $('fallHoldField'),
   alertSento: $('alertSento'), alertLevanto: $('alertLevanto'), alertCamaEntra: $('alertCamaEntra'), alertCamaSale: $('alertCamaSale'),
   alertCamina: $('alertCamina'), alertQuieta: $('alertQuieta'), alertPideAyuda: $('alertPideAyuda'), bedMarkBtn: $('bedMarkBtn'), bedClearBtn: $('bedClearBtn'), bedInfo: $('bedInfo'),
+  watchZoneEnabled: $('watchZoneEnabled'), watchZoneMarkBtn: $('watchZoneMarkBtn'), watchZoneClearBtn: $('watchZoneClearBtn'), watchZoneInfo: $('watchZoneInfo'),
+  watchDwellS: $('watchDwellS'), watchDwellVal: $('watchDwellVal'),
 };
 
 // ---------------------------------------------------------------------------
@@ -54,6 +56,7 @@ const DEFAULTS = {
   // Actividades: siempre se anotan en Eventos; a Telegram solo si se activa cada una.
   alertSento: false, alertLevanto: false, alertCamaEntra: false, alertCamaSale: false, alertCamina: false, alertQuieta: false, alertPideAyuda: false,
   bedZones: [],
+  watchZoneEnabled: false, watchZones: [], watchDwellS: 10,
 };
 const settings = { ...DEFAULTS, ...readSettings() };
 
@@ -83,10 +86,11 @@ function bindSettings() {
   els.holdMs.value = settings.holdMs;
   els.cooldownS.value = settings.cooldownS;
   els.model.value = settings.model;
-  for (const k of ['includeFace', 'useHands', 'sendPhoto', 'beep', 'drawSkeleton', 'mirror', 'liveWebrtc', 'detectFalls', ...ACTIVITY_KEYS]) els[k].checked = settings[k];
+  for (const k of ['includeFace', 'useHands', 'sendPhoto', 'beep', 'drawSkeleton', 'mirror', 'liveWebrtc', 'detectFalls', 'watchZoneEnabled', ...ACTIVITY_KEYS]) els[k].checked = settings[k];
   els.deviceName.value = deviceName();
   els.maxPeople.value = settings.maxPeople;
   els.fallHoldS.value = settings.fallHoldS;
+  els.watchDwellS.value = settings.watchDwellS;
 
   const refresh = () => {
     els.sensVal.textContent = `${Math.round(settings.sensitivity * 100)}%`;
@@ -97,6 +101,8 @@ function bindSettings() {
     els.deviceField.hidden = ip;
     els.fallVal.textContent = `${settings.fallHoldS} s`;
     els.fallHoldField.hidden = !settings.detectFalls;
+    els.watchDwellVal.textContent = `${settings.watchDwellS} s`;
+    refreshWatchZoneInfo();
     people.configure({
       touch: { holdMs: settings.holdMs, cooldownMs: settings.cooldownS * 1000 },
       fall: { holdMs: settings.fallHoldS * 1000, cooldownMs: Math.max(60000, settings.cooldownS * 1000) },
@@ -137,7 +143,10 @@ function bindSettings() {
   on(els.detectFalls, 'detectFalls');
   for (const k of ACTIVITY_KEYS) on(els[k], k);
   setupBedZones();
+  setupWatchZone();
   on(els.fallHoldS, 'fallHoldS', Number);
+  on(els.watchZoneEnabled, 'watchZoneEnabled');
+  on(els.watchDwellS, 'watchDwellS', Number);
   on(els.deviceName, 'deviceName', (v) => v.slice(0, 40));
   els.deviceName.addEventListener('input', () => { settings.deviceNameAsked = true; saveSettings(); });
   els.deviceNameShowBtn.addEventListener('click', () => {
@@ -592,6 +601,7 @@ function loop() {
 // pocos cientos de ms, mucho más rápido que lo que tarda en dispararse cualquier alerta.
 let lastObjCheck = 0;
 let cachedPersonBoxes = null;
+let objSinPersonaDesde = 0;
 const OBJ_CHECK_MS = 300;
 
 /** ¿El recuadro de esta pose cae adentro (con margen) de algún "person" confirmado
@@ -617,15 +627,30 @@ function processFrame({ source, w, h }) {
   // sabe distinguir "persona" de taza, mouse, teclado, lata, silla, etc., algo que el
   // modelo de pose no sabe hacer (solo dibuja un esqueleto, y a veces "completa" uno
   // creíble a partir de cualquier cosa). Sin esto confirmado, la pose no cuenta.
-  if (objectDetector && poses.length) {
+  if (objectDetector && poses.length && !objectDetectorFailed) {
     if (ts - lastObjCheck >= OBJ_CHECK_MS) {
       lastObjCheck = ts;
-      const objRes = objectDetector.detectForVideo(source, ts);
-      cachedPersonBoxes = (objRes.detections || [])
-        .filter((d) => d.categories?.[0]?.categoryName === 'person')
-        .map((d) => d.boundingBox);
+      try {
+        const objRes = objectDetector.detectForVideo(source, ts);
+        cachedPersonBoxes = (objRes.detections || [])
+          .filter((d) => d.categories?.[0]?.categoryName === 'person')
+          .map((d) => d.boundingBox);
+        if (cachedPersonBoxes.length) objSinPersonaDesde = 0;
+        else objSinPersonaDesde ||= ts;
+      } catch (e) {
+        // Si el verificador falla en este equipo (celular/GPU/WASM), no debe tumbar
+        // toda la detección: se desactiva solo y se vuelve al comportamiento anterior.
+        console.warn('Verificador de persona falló, se desactiva en este equipo:', e);
+        objectDetectorFailed = true;
+        cachedPersonBoxes = null;
+      }
     }
-    if (cachedPersonBoxes) poses = poses.filter((pose) => poseConfirmadaComoPersona(pose, cachedPersonBoxes, w, h));
+    // Si hace rato que el verificador no confirma a NADIE (ni siquiera cuando el
+    // modelo de pose sí ve a alguien), es que no está pudiendo confirmar en este
+    // equipo/lugar (poca luz, ángulo, cámara floja) y no se debe confiar en él: mejor
+    // dejar pasar las poses sin ese filtro que esconder a la persona por completo.
+    const confiable = cachedPersonBoxes && !(objSinPersonaDesde && ts - objSinPersonaDesde > 8000);
+    if (confiable) poses = poses.filter((pose) => poseConfirmadaComoPersona(pose, cachedPersonBoxes, w, h));
   }
 
   const handRes = settings.useHands && poses.length ? handLandmarker.detectForVideo(source, ts) : null;
@@ -638,7 +663,12 @@ function processFrame({ source, w, h }) {
     const pose = poses[p.index];
     const res = evaluateFrame(pose, handsByPose[p.index], w, h, { sensitivity: settings.sensitivity, includeFace: settings.includeFace });
     const touchState = p.track.touch.update(res.touching, now);
-    const act = p.track.act.update(pose, w, h, now, { bedZones: settings.bedZones, detectarBrazoArriba: settings.alertPideAyuda });
+    const act = p.track.act.update(pose, w, h, now, {
+      bedZones: settings.bedZones,
+      detectarBrazoArriba: settings.alertPideAyuda,
+      watchZones: settings.watchZoneEnabled ? settings.watchZones : [],
+      watchDwellMs: settings.watchDwellS * 1000,
+    });
     // Acostada en una zona marcada como cama no es una caída. Tampoco cuenta si esta
     // persona nunca estuvo parada o sentada antes: una caída real siempre tiene una
     // postura normal previa, así que "nacer" ya acostado (típico de un objeto confundido
@@ -733,6 +763,7 @@ function drawAll(w, h, list) {
   if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
   octx.clearRect(0, 0, w, h);
   drawBedZones(w, h);
+  drawWatchZone(w, h);
   for (const person of list) drawPerson(w, h, person);
   const fallen = list.find((p) => p.lying);
   const touching = list.find((p) => p.res.touching);
@@ -853,6 +884,9 @@ const ACTIVITIES = {
   camina: { key: 'alertCamina', icon: '🚶', text: (q) => `${q} empezó a caminar` },
   quieta: { key: 'alertQuieta', icon: '⏸️', text: (q) => `${q} dejó de caminar y se quedó quieta` },
   pide_ayuda: { key: 'alertPideAyuda', icon: '🙋', text: (q) => `${q} levantó el brazo (puede estar pidiendo algo)` },
+  zona_entra: { key: 'watchZoneEnabled', icon: '📍', text: (q) => `${q} entró a la zona marcada` },
+  zona_sale: { key: 'watchZoneEnabled', icon: '📍', text: (q) => `${q} salió de la zona marcada` },
+  zona_tiempo: { key: 'watchZoneEnabled', icon: '⏱️', text: (q) => `${q} lleva más de ${settings.watchDwellS} s en la zona marcada` },
 };
 
 async function onActivity(ev, person, total, w, h, source) {
@@ -913,6 +947,7 @@ function setupBedZones() {
   const viewer = els.overlay.parentElement;
   els.bedMarkBtn.addEventListener('click', () => {
     if (!bedMarking && !running) { addLog('Primero toque Iniciar para ver la imagen y después marque la cama.', 'alert'); return; }
+    watchMarking = false; // no se puede marcar las dos cosas a la vez
     bedMarking = !bedMarking;
     bedDraft = null;
     viewer.classList.toggle('marking', bedMarking);
@@ -970,6 +1005,88 @@ function drawBedZones(w, h) {
     octx.strokeRect(z.x * w, z.y * h, z.w * w, z.h * h);
     octx.fillStyle = z.draft ? '#facc15' : '#93c5fd';
     octx.fillText('🛏️ CAMA', z.x * w + 6, z.y * h + fs + 4);
+  }
+  octx.restore();
+}
+
+// --- Zona de interés: igual mecanismo que las camas, pero genérico (cualquier lugar). ---
+let watchMarking = false;
+let watchDraft = null;
+
+function refreshWatchZoneInfo() {
+  const n = (settings.watchZones || []).length;
+  els.watchZoneInfo.textContent = watchMarking
+    ? 'Arrastre el dedo sobre la imagen, de una esquina de la zona a la otra.'
+    : n ? `Zona marcada. Avisa al entrar, al salir, y si se queda ${settings.watchDwellS} s adentro.` : 'No hay ninguna zona marcada.';
+  els.watchZoneClearBtn.disabled = !n;
+  els.watchZoneMarkBtn.textContent = watchMarking ? 'Cancelar' : '📍 Marcar zona';
+  els.watchZoneMarkBtn.disabled = !settings.watchZoneEnabled;
+  els.watchZoneClearBtn.disabled = !settings.watchZoneEnabled || !n;
+}
+
+function setupWatchZone() {
+  if (!Array.isArray(settings.watchZones)) settings.watchZones = [];
+  const viewer = els.overlay.parentElement;
+  els.watchZoneMarkBtn.addEventListener('click', () => {
+    if (!watchMarking && !running) { addLog('Primero toque Iniciar para ver la imagen y después marque la zona.', 'alert'); return; }
+    bedMarking = false; // no se puede marcar las dos cosas a la vez
+    watchMarking = !watchMarking;
+    watchDraft = null;
+    viewer.classList.toggle('marking', watchMarking);
+    refreshWatchZoneInfo();
+  });
+  els.watchZoneClearBtn.addEventListener('click', () => {
+    if (!confirm('¿Borrar la zona marcada?')) return;
+    settings.watchZones = [];
+    saveSettings();
+    refreshWatchZoneInfo();
+  });
+  viewer.addEventListener('pointerdown', (ev) => {
+    if (!watchMarking) return;
+    const p = toImageCoords(ev);
+    if (!p) return;
+    ev.preventDefault();
+    viewer.setPointerCapture?.(ev.pointerId);
+    watchDraft = { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
+  });
+  viewer.addEventListener('pointermove', (ev) => {
+    if (!watchMarking || !watchDraft) return;
+    const p = toImageCoords(ev);
+    if (p) { watchDraft.x1 = p.x; watchDraft.y1 = p.y; }
+  });
+  const finish = () => {
+    if (!watchMarking || !watchDraft) return;
+    const z = { x: Math.min(watchDraft.x0, watchDraft.x1), y: Math.min(watchDraft.y0, watchDraft.y1), w: Math.abs(watchDraft.x1 - watchDraft.x0), h: Math.abs(watchDraft.y1 - watchDraft.y0) };
+    watchDraft = null;
+    if (z.w < 0.05 || z.h < 0.05) return; // muy chica: seguramente fue un toque sin querer
+    settings.watchZones = [z]; // una sola zona a la vez, para que sea simple
+    saveSettings();
+    watchMarking = false;
+    viewer.classList.remove('marking');
+    addLog('Zona marcada');
+    refreshWatchZoneInfo();
+  };
+  viewer.addEventListener('pointerup', finish);
+  viewer.addEventListener('pointercancel', () => { watchDraft = null; });
+  refreshWatchZoneInfo();
+}
+
+function drawWatchZone(w, h) {
+  const zones = [...(settings.watchZones || [])];
+  if (watchDraft) zones.push({ x: Math.min(watchDraft.x0, watchDraft.x1), y: Math.min(watchDraft.y0, watchDraft.y1), w: Math.abs(watchDraft.x1 - watchDraft.x0), h: Math.abs(watchDraft.y1 - watchDraft.y0), draft: true });
+  if (!zones.length) return;
+  const fs = Math.max(13, Math.round(w / 55));
+  octx.save();
+  octx.setLineDash([4, 6]);
+  octx.lineWidth = Math.max(2, w / 350);
+  octx.font = `bold ${fs}px system-ui, sans-serif`;
+  for (const z of zones) {
+    octx.strokeStyle = z.draft ? 'rgba(250,204,21,.95)' : 'rgba(167,139,250,.95)';
+    octx.fillStyle = z.draft ? 'rgba(250,204,21,.12)' : 'rgba(167,139,250,.10)';
+    octx.fillRect(z.x * w, z.y * h, z.w * w, z.h * h);
+    octx.strokeRect(z.x * w, z.y * h, z.w * w, z.h * h);
+    octx.fillStyle = z.draft ? '#facc15' : '#c4b5fd';
+    octx.fillText('📍 ZONA', z.x * w + 6, z.y * h + fs + 4);
   }
   octx.restore();
 }

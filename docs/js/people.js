@@ -321,13 +321,38 @@ export class ActivityTracker {
     this.brazoState = 'abajo';
     this.brazoCand = 'abajo';
     this.brazoCandSince = 0;
+    // Zona de interés (dibujada por el usuario, como la cama): si está adentro o no, y
+    // desde cuándo, para poder avisar recién después de X tiempo ahí adentro (configurable).
+    this.zoneInside = false;
+    this.zoneSince = null;
+    this.zoneAlerted = false;
   }
 
   /** @returns {{posture:string, walking:boolean, events:string[], lyingNow:boolean, inBed:boolean, huboPosturaNormalAntes:boolean}} */
-  update(pose, w, h, now, { bedZones = [], detectarBrazoArriba = false } = {}) {
+  update(pose, w, h, now, { bedZones = [], detectarBrazoArriba = false, watchZones = [], watchDwellMs = null } = {}) {
     const events = [];
     const p = classifyPosture(pose, w, h, bedZones);
     const s = p.posture === 'acostada' && p.inBed ? 'cama' : p.posture;
+
+    // --- zona de interés: entrar/salir, y "lleva más de X tiempo ahí" ---
+    if (watchZones.length && p.hip) {
+      const dentro = inZones(p.hip, watchZones, w, h);
+      if (dentro !== this.zoneInside) {
+        this.zoneInside = dentro;
+        if (dentro) {
+          this.zoneSince = now;
+          this.zoneAlerted = false;
+          events.push('zona_entra');
+        } else {
+          this.zoneSince = null;
+          this.zoneAlerted = false;
+          events.push('zona_sale');
+        }
+      } else if (dentro && watchDwellMs && !this.zoneAlerted && this.zoneSince !== null && now - this.zoneSince >= watchDwellMs) {
+        this.zoneAlerted = true;
+        events.push('zona_tiempo');
+      }
+    }
 
     // --- brazo levantado (pidiendo algo / llamando) ---
     if (detectarBrazoArriba) {
