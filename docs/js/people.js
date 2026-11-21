@@ -283,7 +283,27 @@ export function classifyPosture(pose, w, h, bedZones = []) {
       const A = px(a, w, h); const B = px(b, w, h);
       return { angle: (Math.atan2(Math.abs(B.x - A.x), Math.abs(B.y - A.y)) * 180) / Math.PI, drop: (B.y - A.y) / torso };
     });
-  if (!thighs.length) return { posture: 'desconocida', inBed: false, hip, torso };
+  if (!thighs.length) {
+    // No se ven las rodillas (cámara que solo toma de la cintura para arriba): sin esa
+    // evidencia no se puede estar 100% seguro, pero a pedido se arriesga un cálculo
+    // aproximado con hombros y cadera. Torso "corto" respecto del ancho de hombros suele
+    // darse sentada (el cuerpo se acorta de cintura para arriba al sentarse, sobre todo
+    // visto de una cámara apoyada en una mesa); torso "largo" es parada. Si queda en el
+    // medio, mejor no arriesgar nada ("desconocida").
+    const anchoHombros = dist(px(ls, w, h), px(rs, w, h));
+    const anchoCadera = dist(px(lh, w, h), px(rh, w, h));
+    // Hombros y cadera tienen que guardar una proporción de cuerpo real (en una persona
+    // real nunca son tan distintos entre sí); si no, es más probable que sea una mano u
+    // objeto "completado" como torso por el modelo, y no hay que arriesgar nada.
+    const proporcionCreible = anchoHombros >= 2 && anchoCadera >= 2
+      && anchoHombros / anchoCadera >= 0.4 && anchoHombros / anchoCadera <= 2.5;
+    if (proporcionCreible) {
+      const ratio = torso / anchoHombros;
+      if (ratio < 1.05) return { posture: 'sentada', inBed: false, hip, torso, aprox: true };
+      if (ratio >= 1.4) return { posture: 'parada', inBed: false, hip, torso, aprox: true };
+    }
+    return { posture: 'desconocida', inBed: false, hip, torso };
+  }
   const angle = thighs.reduce((s, t) => s + t.angle, 0) / thighs.length;
   const drop = thighs.reduce((s, t) => s + t.drop, 0) / thighs.length; // cuánto baja la rodilla, en "troncos"
 
