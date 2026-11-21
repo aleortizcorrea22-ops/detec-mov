@@ -5,7 +5,7 @@ import { setupInstallButton } from './install.js';
 // Visible en pantalla (junto al nombre) para confirmar de un vistazo si el celular/PC ya
 // tiene la versión más nueva, sin tener que abrir herramientas de desarrollador. Se sube
 // junto con el VERSION de sw.js en cada cambio.
-const APP_VERSION = 'v61';
+const APP_VERSION = 'v62';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo, loadLicenciaConfig } from './licencia.js';
 import { iniciarPanelAdmin, NOMBRE_ADMIN_SECRETO } from './admin-panel.js';
@@ -65,6 +65,10 @@ const DEFAULTS = {
   bedZones: [],
   watchZoneEnter: false, watchZoneExit: false, watchZoneInside: false, watchZoneOutside: false,
   watchZones: [], watchDwellInS: 10, watchDwellInUnit: 's', watchDwellOutS: 30, watchDwellOutUnit: 's',
+  // Contadores de entradas/salidas: NO van dentro del seguimiento de cada persona (eso se
+  // borra cada vez que se toca Iniciar, para renumerar Persona 1, 2…). Viven acá, guardados,
+  // y solo se ponen en 0 cuando el usuario toca "Reiniciar contadores".
+  watchEnterCount: 0, watchExitCount: 0,
 };
 
 // Unidad de los tiempos de zona: el usuario elige segundos, minutos u horas; la barra
@@ -922,8 +926,8 @@ const ACTIVITIES = {
   camina: { key: 'alertCamina', icon: '🚶', text: (q) => `${q} empezó a caminar` },
   quieta: { key: 'alertQuieta', icon: '⏸️', text: (q) => `${q} dejó de caminar y se quedó quieta` },
   pide_ayuda: { key: 'alertPideAyuda', icon: '🙋', text: (q) => `${q} levantó el brazo (puede estar pidiendo algo)` },
-  zona_entra: { key: 'watchZoneEnter', icon: '📍', text: (q, p) => `${q} entró a la zona marcada (por ${p.zoneLastSide || '?'}) · entradas: ${p.zoneEnterCount}` },
-  zona_sale: { key: 'watchZoneExit', icon: '📍', text: (q, p) => `${q} salió de la zona marcada (por ${p.zoneLastSide || '?'}) · salidas: ${p.zoneExitCount}` },
+  zona_entra: { key: 'watchZoneEnter', icon: '📍', text: (q, p) => `${q} entró a la zona marcada (por ${p.zoneLastSide || '?'}) · entradas: ${settings.watchEnterCount}` },
+  zona_sale: { key: 'watchZoneExit', icon: '📍', text: (q, p) => `${q} salió de la zona marcada (por ${p.zoneLastSide || '?'}) · salidas: ${settings.watchExitCount}` },
   zona_tiempo_dentro: { key: 'watchZoneInside', icon: '⏱️', text: (q, p) => `${q} lleva ${p.zoneElapsedS} s adentro de la zona marcada (configurado: ${settings.watchDwellInS} ${UNIT_LABEL[settings.watchDwellInUnit]})` },
   zona_tiempo_fuera: { key: 'watchZoneOutside', icon: '⏱️', text: (q, p) => `${q} lleva ${p.zoneElapsedS} s afuera de la zona marcada (configurado: ${settings.watchDwellOutS} ${UNIT_LABEL[settings.watchDwellOutUnit]})` },
 };
@@ -931,6 +935,11 @@ const ACTIVITIES = {
 async function onActivity(ev, person, total, w, h, source) {
   const a = ACTIVITIES[ev];
   if (!a) return;
+  // El contador de entradas/salidas cuenta TODO cruce real (lo que ya decidió el
+  // seguimiento de la persona), sin importar si este aviso puntual se termina mandando
+  // a Telegram o no: por eso se suma acá arriba, antes de la espera entre alertas.
+  if (ev === 'zona_entra') { settings.watchEnterCount++; saveSettings(); }
+  if (ev === 'zona_sale') { settings.watchExitCount++; saveSettings(); }
   // No repetir el mismo aviso de la misma persona antes de la espera que el usuario
   // configuró ("Espera entre alertas"): la misma que se usa para el resto de las alertas,
   // así el usuario maneja un solo control para todas.
@@ -1072,9 +1081,7 @@ function formatElapsed(totalS) {
 function refreshWatchZoneInfo() {
   const n = (settings.watchZones || []).length;
   const anyEnabled = settings.watchZoneEnter || settings.watchZoneExit || settings.watchZoneInside || settings.watchZoneOutside;
-  const entradas = people.tracks.reduce((s, t) => s + (t.act.zoneEnterCount || 0), 0);
-  const salidas = people.tracks.reduce((s, t) => s + (t.act.zoneExitCount || 0), 0);
-  const contador = n ? ` · Entradas: ${entradas} · Salidas: ${salidas}` : '';
+  const contador = n ? ` · Entradas: ${settings.watchEnterCount} · Salidas: ${settings.watchExitCount}` : '';
   els.watchZoneInfo.textContent = (watchMarking
     ? 'Arrastre el dedo sobre la imagen, de una esquina de la zona a la otra.'
     : n ? 'Zona marcada.' : 'No hay ninguna zona marcada.') + contador;
@@ -1119,6 +1126,9 @@ function setupWatchZone() {
     refreshWatchZoneInfo();
   });
   els.watchZoneResetBtn?.addEventListener('click', () => {
+    settings.watchEnterCount = 0;
+    settings.watchExitCount = 0;
+    saveSettings();
     people.resetZoneCounters();
     addLog('Contadores de entradas/salidas de zona reiniciados');
     refreshWatchZoneInfo();
