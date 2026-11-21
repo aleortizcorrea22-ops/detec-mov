@@ -917,15 +917,20 @@ async function onActivity(ev, person, total, w, h, source) {
   if (!settings[a.key]) return; // el usuario no pidió este aviso por Telegram
   const cuantas = total === 1 ? '1 persona a la vista' : `${total} personas a la vista`;
   const text = `📍 ${nombreVisible()}\n${a.icon} ${a.text(quien)}\n👥 ${cuantas}\n🕒 ${new Date().toLocaleString()}`;
-  let image;
-  if (settings.sendPhoto) {
-    try { image = personPhoto(source, w, h, person.box); } catch (e) { console.warn('No se pudo capturar la foto', e); }
-  }
+  // Primero el texto solo (liviano, llega rápido aunque la red del celular esté lenta),
+  // y la foto aparte después: así el aviso no espera a que termine de subir la imagen.
   try {
-    await sendAlert({ text, imageDataUrl: image });
+    await sendAlert({ text });
     addLog('Aviso enviado por Telegram');
   } catch (e) {
     addLog(`No se pudo enviar a Telegram: ${e.message}`, 'alert');
+    return;
+  }
+  if (settings.sendPhoto) {
+    try {
+      const image = personPhoto(source, w, h, person.box);
+      sendAlert({ text: `📷 Foto de: ${a.text(quien)}`, imageDataUrl: image }).catch((e) => addLog(`No se pudo enviar la foto: ${e.message}`, 'alert'));
+    } catch (e) { console.warn('No se pudo capturar la foto', e); }
   }
 }
 
