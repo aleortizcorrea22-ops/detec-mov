@@ -213,11 +213,18 @@ const MODEL_URLS = {
   full: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task',
   heavy: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/latest/pose_landmarker_heavy.task',
   hand: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task',
+  // Detector de objetos (igual familia que YOLO: entrenado en COCO, con "person" como una
+  // clase más entre silla, taza, mouse, teclado, lata, etc.). Se usa para CONFIRMAR que
+  // una pose detectada corresponde de verdad a una persona, porque el modelo de pose solo
+  // sabe dibujar un esqueleto y a veces "completa" uno creíble a partir de cualquier cosa.
+  object: 'https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/int8/latest/efficientdet_lite0.tflite',
 };
 
 let vision = null;
 let poseLandmarker = null;
 let handLandmarker = null;
+let objectDetector = null;
+let objectDetectorFailed = false; // si no carga (sin internet la primera vez, etc.), no bloquear todo el resto
 let mp = null;
 
 async function createWithFallback(Klass, options) {
@@ -265,6 +272,22 @@ async function loadModels() {
       minHandPresenceConfidence: 0.4,
       minTrackingConfidence: 0.4,
     });
+  }
+  if (!objectDetector && !objectDetectorFailed) {
+    try {
+      objectDetector = await createWithFallback(mp.ObjectDetector, {
+        baseOptions: { modelAssetPath: modelUrl('object') },
+        runningMode: 'VIDEO',
+        scoreThreshold: 0.35,
+        maxResults: 8,
+        categoryAllowlist: ['person'],
+      });
+    } catch (e) {
+      // Sin esto, la app sigue andando con los chequeos de geometría nada más (menos
+      // seguro, pero no deja a nadie sin la app por un modelo extra que no pudo bajar).
+      console.warn('No se pudo cargar el detector de objetos (verificación extra de persona):', e);
+      objectDetectorFailed = true;
+    }
   }
 }
 
@@ -564,13 +587,47 @@ function loop() {
   }
 }
 
+// Última vez que corrió el detector de objetos y qué encontró, para no correrlo en
+// cada cuadro (es más pesado) sin perder precisión: alcanza con confirmar cada
+// pocos cientos de ms, mucho más rápido que lo que tarda en dispararse cualquier alerta.
+let lastObjCheck = 0;
+let cachedPersonBoxes = null;
+const OBJ_CHECK_MS = 300;
+
+/** ¿El recuadro de esta pose cae adentro (con margen) de algún "person" confirmado
+ * por el detector de objetos? Si no hay margen de superposición, no se confía en la pose. */
+function poseConfirmadaComoPersona(pose, personBoxes, w, h) {
+  const box = poseBox(pose, w, h);
+  if (!box) return false;
+  return personBoxes.some((pb) => (
+    box.cx >= pb.originX - pb.width * 0.2 && box.cx <= pb.originX + pb.width * 1.2 &&
+    box.cy >= pb.originY - pb.height * 0.2 && box.cy <= pb.originY + pb.height * 1.2
+  ));
+}
+
 function processFrame({ source, w, h }) {
   let ts = performance.now();
   if (ts <= lastTs) ts = lastTs + 1;
   lastTs = ts;
 
   const poseRes = poseLandmarker.detectForVideo(source, ts);
-  const poses = filtrarPosesDuplicadas(poseRes.landmarks || [], w, h);
+  let poses = filtrarPosesDuplicadas(poseRes.landmarks || [], w, h);
+
+  // Verificación extra con un detector de objetos tipo COCO (misma familia que YOLO):
+  // sabe distinguir "persona" de taza, mouse, teclado, lata, silla, etc., algo que el
+  // modelo de pose no sabe hacer (solo dibuja un esqueleto, y a veces "completa" uno
+  // creíble a partir de cualquier cosa). Sin esto confirmado, la pose no cuenta.
+  if (objectDetector && poses.length) {
+    if (ts - lastObjCheck >= OBJ_CHECK_MS) {
+      lastObjCheck = ts;
+      const objRes = objectDetector.detectForVideo(source, ts);
+      cachedPersonBoxes = (objRes.detections || [])
+        .filter((d) => d.categories?.[0]?.categoryName === 'person')
+        .map((d) => d.boundingBox);
+    }
+    if (cachedPersonBoxes) poses = poses.filter((pose) => poseConfirmadaComoPersona(pose, cachedPersonBoxes, w, h));
+  }
+
   const handRes = settings.useHands && poses.length ? handLandmarker.detectForVideo(source, ts) : null;
   const hands = handRes?.landmarks || [];
   const handsByPose = assignHands(poses, hands, w, h);
