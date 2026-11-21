@@ -450,7 +450,10 @@ async function startLiveShare() {
   }
   liveLinkSent = false;
   try {
-    liveMicStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }).catch(() => null);
+    liveMicStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }).catch((e) => {
+      addLog(`Sin micrófono para el video en vivo (quien mire no va a poder escuchar el ambiente): ${e.message}`, 'alert');
+      return null;
+    });
     openLivePeer(liveShareId());
   } catch (e) {
     addLog(`No se pudo activar el video en vivo: ${e.message}`, 'alert');
