@@ -49,7 +49,7 @@ const els = {
 
 const DEFAULTS = {
   sourceType: 'device', deviceId: '', cameraUrl: '', sensitivity: 1, holdMs: 600, cooldownS: 30,
-  model: 'full', includeFace: false, useHands: true, sendPhoto: true, beep: true, drawSkeleton: true, mirror: false, liveWebrtc: false, liveMicMuted: false, liveSoundMuted: false,
+  model: 'full', includeFace: false, useHands: true, sendPhoto: true, beep: true, drawSkeleton: true, mirror: false, mirrorAuto: true, liveWebrtc: false, liveMicMuted: false, liveSoundMuted: false,
   deviceName: '', deviceNameAsked: false, maxPeople: 3, detectFalls: true, fallHoldS: 3,
   // Actividades: siempre se anotan en Eventos; a Telegram solo si se activa cada una.
   alertSento: false, alertLevanto: false, alertCamaEntra: false, alertCamaSale: false, alertCamina: false, alertQuieta: false,
@@ -62,6 +62,18 @@ function readSettings() {
 }
 function saveSettings() {
   try { localStorage.setItem('detecmov.settings', JSON.stringify(settings)); } catch { /* sin almacenamiento */ }
+}
+
+/** Pone el espejado solo según si la cámara que se usó es delantera o trasera (salvo que
+ * el usuario ya lo haya tocado a mano con la casilla, ver bindSettings). La cámara
+ * delantera se ve en espejo (como en una videollamada); la trasera, no. */
+function aplicarMirrorAutomatico(facingMode) {
+  if (!settings.mirrorAuto || !facingMode) return;
+  const espejado = facingMode === 'user';
+  settings.mirror = espejado;
+  els.mirror.checked = espejado;
+  els.viewer.classList.toggle('mirrored', espejado);
+  saveSettings();
 }
 
 function bindSettings() {
@@ -113,7 +125,14 @@ function bindSettings() {
   on(els.sendPhoto, 'sendPhoto');
   on(els.beep, 'beep');
   on(els.drawSkeleton, 'drawSkeleton');
-  on(els.mirror, 'mirror');
+  // El espejado se pone solo según la cámara (ver aplicarMirrorAutomatico), pero si
+  // el usuario lo toca a mano, esa elección manda y ya no se vuelve a tocar sola.
+  els.mirror.addEventListener('input', () => {
+    settings.mirror = els.mirror.checked;
+    settings.mirrorAuto = false;
+    saveSettings();
+    refresh();
+  });
   on(els.liveWebrtc, 'liveWebrtc');
   on(els.detectFalls, 'detectFalls');
   for (const k of ACTIVITY_KEYS) on(els[k], k);
@@ -294,6 +313,10 @@ async function startSource() {
     els.video.hidden = false;
     els.ipImg.hidden = true;
     await els.video.play();
+    const trackSettings = stream.getVideoTracks()[0]?.getSettings?.() || {};
+    const facingMode = trackSettings.facingMode
+      || (settings.deviceId === 'front' ? 'user' : settings.deviceId ? undefined : 'environment');
+    aplicarMirrorAutomatico(facingMode);
     listDevices().catch(() => {});
     return;
   }

@@ -13,30 +13,45 @@ export const P = {
 // Puntas de los dedos en MediaPipe Hands (21 puntos)
 export const FINGERTIPS = [4, 8, 12, 16, 20];
 
-const MIN_VIS = 0.45;
+const MIN_VIS = 0.55;
 const visible = (lm) => lm && (lm.visibility === undefined || lm.visibility >= MIN_VIS);
 const px = (lm, w, h) => ({ x: lm.x * w, y: lm.y * h });
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const mean = (pts) => ({ x: pts.reduce((s, p) => s + p.x, 0) / pts.length, y: pts.reduce((s, p) => s + p.y, 0) / pts.length });
 
+/** Cuántos puntos de TODO el cuerpo están bien vistos (no solo la cara): si hay pocos,
+ * es señal de que no hay una persona real a la vista (por ejemplo, solo una mano cerca
+ * de cámara), aunque el modelo haya adivinado un par de puntos de cara sueltos. */
+function pistasDeCuerpoSuficientes(pose) {
+  return pose.filter(visible).length >= 6;
+}
+
 /**
  * Calcula la "zona de la cabeza" (círculo) a partir de los puntos de pose.
- * Devuelve null si no se ve bien la cabeza.
+ * Devuelve null si no se ve bien la cabeza, o si no hay suficiente evidencia de que
+ * haya una persona de verdad (y no, por ejemplo, solo una mano suelta cerca de cámara).
  */
 export function headZone(pose, w, h, sensitivity = 1) {
+  if (!pistasDeCuerpoSuficientes(pose)) return null;
   const facePts = [P.NOSE, P.L_EYE, P.R_EYE, P.L_EAR, P.R_EAR].map((i) => pose[i]).filter(visible).map((l) => px(l, w, h));
-  if (facePts.length < 2) return null;
+  if (facePts.length < 3) return null;
   const face = mean(facePts);
 
   // Tamaño de referencia: el mayor entre ancho de hombros, ancho de cabeza y cuello.
+  // Hace falta al menos una pareja "estructural" (hombros u orejas): la sola distancia
+  // entre los ojos es una señal débil (dos puntos sueltos, fácil de adivinar sin que
+  // haya una persona real) y no alcanza por sí sola para confiar en la zona.
   const sizes = [];
-  if (visible(pose[P.L_SHOULDER]) && visible(pose[P.R_SHOULDER])) {
+  const hombrosOk = visible(pose[P.L_SHOULDER]) && visible(pose[P.R_SHOULDER]);
+  const orejasOk = visible(pose[P.L_EAR]) && visible(pose[P.R_EAR]);
+  if (hombrosOk) {
     const ls = px(pose[P.L_SHOULDER], w, h);
     const rs = px(pose[P.R_SHOULDER], w, h);
     sizes.push(dist(ls, rs));
     sizes.push(1.4 * Math.abs(mean([ls, rs]).y - face.y));
   }
-  if (visible(pose[P.L_EAR]) && visible(pose[P.R_EAR])) sizes.push(2.3 * dist(px(pose[P.L_EAR], w, h), px(pose[P.R_EAR], w, h)));
+  if (orejasOk) sizes.push(2.3 * dist(px(pose[P.L_EAR], w, h), px(pose[P.R_EAR], w, h)));
+  if (!hombrosOk && !orejasOk) return null;
   if (visible(pose[P.L_EYE]) && visible(pose[P.R_EYE])) sizes.push(4.5 * dist(px(pose[P.L_EYE], w, h), px(pose[P.R_EYE], w, h)));
   if (sizes.length === 0) return null;
   const body = Math.max(...sizes);
