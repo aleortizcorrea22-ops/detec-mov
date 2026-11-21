@@ -154,17 +154,25 @@
       </div>
 
       <h2>Zona de interés (opcional)</h2>
-      <label class="check"><input id="watchZoneEnabled" type="checkbox"> Avisar si alguien entra, sale o se queda en una zona marcada</label>
-      <p class="muted" style="margin:4px 0 8px;font-size:.85em">Solo se analiza si está marcada esta casilla. Dibuje la zona que le interese (por ejemplo, la puerta, un pasillo, o cerca de las escaleras).</p>
+      <p class="muted" style="margin:4px 0 8px;font-size:.85em">Solo se analiza lo que esté tildado acá abajo. Dibuje la zona que le interese (por ejemplo, la puerta, un pasillo, o cerca de las escaleras).</p>
+      <label class="check"><input id="watchZoneEnter" type="checkbox"> 📍 Avisar cuando ENTRA a la zona</label>
+      <label class="check"><input id="watchZoneExit" type="checkbox"> 📍 Avisar cuando SALE de la zona</label>
+      <label class="check"><input id="watchZoneInside" type="checkbox"> ⏱️ Avisar si lleva mucho tiempo ADENTRO de la zona</label>
+      <label class="field">
+        <span>Tiempo adentro antes de avisar: <b id="watchDwellInVal"></b></span>
+        <input id="watchDwellInS" type="range" min="1" max="300" step="1">
+      </label>
+      <label class="check"><input id="watchZoneOutside" type="checkbox"> ⏱️ Avisar si lleva mucho tiempo AFUERA de la zona</label>
+      <label class="field">
+        <span>Tiempo afuera antes de avisar: <b id="watchDwellOutVal"></b></span>
+        <input id="watchDwellOutS" type="range" min="1" max="600" step="1">
+      </label>
       <p id="watchZoneInfo" class="muted"></p>
       <div class="row">
         <button id="watchZoneMarkBtn" class="btn" type="button">📍 Marcar zona</button>
         <button id="watchZoneClearBtn" class="btn" type="button">Borrar zona</button>
+        <button id="watchZoneResetBtn" class="btn" type="button">Reiniciar contadores</button>
       </div>
-      <label class="field">
-        <span>Tiempo adentro de la zona antes de avisar: <b id="watchDwellVal"></b></span>
-        <input id="watchDwellS" type="range" min="1" max="120" step="1">
-      </label>
 
       <h2>Otros avisos (opcionales)</h2>
       <p class="muted">Siempre se anotan en Eventos. Marque cuáles quiere recibir también por Telegram:</p>

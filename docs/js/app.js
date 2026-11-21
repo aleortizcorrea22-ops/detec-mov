@@ -42,8 +42,9 @@ const els = {
   fallVal: $('fallVal'), fallHoldField: $('fallHoldField'),
   alertSento: $('alertSento'), alertLevanto: $('alertLevanto'), alertCamaEntra: $('alertCamaEntra'), alertCamaSale: $('alertCamaSale'),
   alertCamina: $('alertCamina'), alertQuieta: $('alertQuieta'), alertPideAyuda: $('alertPideAyuda'), bedMarkBtn: $('bedMarkBtn'), bedClearBtn: $('bedClearBtn'), bedInfo: $('bedInfo'),
-  watchZoneEnabled: $('watchZoneEnabled'), watchZoneMarkBtn: $('watchZoneMarkBtn'), watchZoneClearBtn: $('watchZoneClearBtn'), watchZoneInfo: $('watchZoneInfo'),
-  watchDwellS: $('watchDwellS'), watchDwellVal: $('watchDwellVal'),
+  watchZoneEnter: $('watchZoneEnter'), watchZoneExit: $('watchZoneExit'), watchZoneInside: $('watchZoneInside'), watchZoneOutside: $('watchZoneOutside'),
+  watchZoneMarkBtn: $('watchZoneMarkBtn'), watchZoneClearBtn: $('watchZoneClearBtn'), watchZoneResetBtn: $('watchZoneResetBtn'), watchZoneInfo: $('watchZoneInfo'),
+  watchDwellInS: $('watchDwellInS'), watchDwellInVal: $('watchDwellInVal'), watchDwellOutS: $('watchDwellOutS'), watchDwellOutVal: $('watchDwellOutVal'),
 };
 
 // ---------------------------------------------------------------------------
@@ -56,7 +57,8 @@ const DEFAULTS = {
   // Actividades: siempre se anotan en Eventos; a Telegram solo si se activa cada una.
   alertSento: false, alertLevanto: false, alertCamaEntra: false, alertCamaSale: false, alertCamina: false, alertQuieta: false, alertPideAyuda: false,
   bedZones: [],
-  watchZoneEnabled: false, watchZones: [], watchDwellS: 10,
+  watchZoneEnter: false, watchZoneExit: false, watchZoneInside: false, watchZoneOutside: false,
+  watchZones: [], watchDwellInS: 10, watchDwellOutS: 30,
 };
 const settings = { ...DEFAULTS, ...readSettings() };
 
@@ -86,11 +88,12 @@ function bindSettings() {
   els.holdMs.value = settings.holdMs;
   els.cooldownS.value = settings.cooldownS;
   els.model.value = settings.model;
-  for (const k of ['includeFace', 'useHands', 'sendPhoto', 'beep', 'drawSkeleton', 'mirror', 'liveWebrtc', 'detectFalls', 'watchZoneEnabled', ...ACTIVITY_KEYS]) els[k].checked = settings[k];
+  for (const k of ['includeFace', 'useHands', 'sendPhoto', 'beep', 'drawSkeleton', 'mirror', 'liveWebrtc', 'detectFalls', 'watchZoneEnter', 'watchZoneExit', 'watchZoneInside', 'watchZoneOutside', ...ACTIVITY_KEYS]) els[k].checked = settings[k];
   els.deviceName.value = deviceName();
   els.maxPeople.value = settings.maxPeople;
   els.fallHoldS.value = settings.fallHoldS;
-  els.watchDwellS.value = settings.watchDwellS;
+  els.watchDwellInS.value = settings.watchDwellInS;
+  els.watchDwellOutS.value = settings.watchDwellOutS;
 
   const refresh = () => {
     els.sensVal.textContent = `${Math.round(settings.sensitivity * 100)}%`;
@@ -101,7 +104,8 @@ function bindSettings() {
     els.deviceField.hidden = ip;
     els.fallVal.textContent = `${settings.fallHoldS} s`;
     els.fallHoldField.hidden = !settings.detectFalls;
-    els.watchDwellVal.textContent = `${settings.watchDwellS} s`;
+    els.watchDwellInVal.textContent = `${settings.watchDwellInS} s`;
+    els.watchDwellOutVal.textContent = `${settings.watchDwellOutS} s`;
     refreshWatchZoneInfo();
     people.configure({
       touch: { holdMs: settings.holdMs, cooldownMs: settings.cooldownS * 1000 },
@@ -145,8 +149,12 @@ function bindSettings() {
   setupBedZones();
   setupWatchZone();
   on(els.fallHoldS, 'fallHoldS', Number);
-  on(els.watchZoneEnabled, 'watchZoneEnabled');
-  on(els.watchDwellS, 'watchDwellS', Number);
+  on(els.watchZoneEnter, 'watchZoneEnter');
+  on(els.watchZoneExit, 'watchZoneExit');
+  on(els.watchZoneInside, 'watchZoneInside');
+  on(els.watchZoneOutside, 'watchZoneOutside');
+  on(els.watchDwellInS, 'watchDwellInS', Number);
+  on(els.watchDwellOutS, 'watchDwellOutS', Number);
   on(els.deviceName, 'deviceName', (v) => v.slice(0, 40));
   els.deviceName.addEventListener('input', () => { settings.deviceNameAsked = true; saveSettings(); });
   els.deviceNameShowBtn.addEventListener('click', () => {
@@ -674,11 +682,14 @@ function processFrame({ source, w, h }) {
     const pose = poses[p.index];
     const res = evaluateFrame(pose, handsByPose[p.index], w, h, { sensitivity: settings.sensitivity, includeFace: settings.includeFace });
     const touchState = p.track.touch.update(res.touching, now);
+    const watchAny = settings.watchZoneEnter || settings.watchZoneExit || settings.watchZoneInside || settings.watchZoneOutside;
     const act = p.track.act.update(pose, w, h, now, {
       bedZones: settings.bedZones,
       detectarBrazoArriba: settings.alertPideAyuda,
-      watchZones: settings.watchZoneEnabled ? settings.watchZones : [],
-      watchDwellMs: settings.watchDwellS * 1000,
+      watchZones: watchAny ? settings.watchZones : [],
+      watchEnter: settings.watchZoneEnter, watchExit: settings.watchZoneExit,
+      watchInsideMs: settings.watchZoneInside ? settings.watchDwellInS * 1000 : null,
+      watchOutsideMs: settings.watchZoneOutside ? settings.watchDwellOutS * 1000 : null,
     });
     // Acostada en una zona marcada como cama no es una caída. Tampoco cuenta si esta
     // persona nunca estuvo parada o sentada antes: una caída real siempre tiene una
@@ -687,7 +698,8 @@ function processFrame({ source, w, h }) {
     const lying = settings.detectFalls && act.lyingNow && !act.inBed && act.huboPosturaNormalAntes;
     const fallState = settings.detectFalls ? p.track.fall.update(lying, now) : 'idle';
     return { id: p.id, track: p.track, pose, hands: handsByPose[p.index], res, touchState, lying, fallState, box: poseBox(pose, w, h),
-      posture: act.posture, walking: act.walking, inBed: act.lyingNow && act.inBed, events: act.events };
+      posture: act.posture, walking: act.walking, inBed: act.lyingNow && act.inBed, events: act.events,
+      zoneEnterCount: act.zoneEnterCount, zoneExitCount: act.zoneExitCount, zoneLastSide: act.zoneLastSide, zoneElapsedS: Math.round(act.zoneElapsedMs / 1000) };
   });
 
   drawAll(w, h, list);
@@ -895,9 +907,10 @@ const ACTIVITIES = {
   camina: { key: 'alertCamina', icon: '🚶', text: (q) => `${q} empezó a caminar` },
   quieta: { key: 'alertQuieta', icon: '⏸️', text: (q) => `${q} dejó de caminar y se quedó quieta` },
   pide_ayuda: { key: 'alertPideAyuda', icon: '🙋', text: (q) => `${q} levantó el brazo (puede estar pidiendo algo)` },
-  zona_entra: { key: 'watchZoneEnabled', icon: '📍', text: (q) => `${q} entró a la zona marcada` },
-  zona_sale: { key: 'watchZoneEnabled', icon: '📍', text: (q) => `${q} salió de la zona marcada` },
-  zona_tiempo: { key: 'watchZoneEnabled', icon: '⏱️', text: (q) => `${q} lleva más de ${settings.watchDwellS} s en la zona marcada` },
+  zona_entra: { key: 'watchZoneEnter', icon: '📍', text: (q, p) => `${q} entró a la zona marcada (por ${p.zoneLastSide || '?'}) · entradas: ${p.zoneEnterCount}` },
+  zona_sale: { key: 'watchZoneExit', icon: '📍', text: (q, p) => `${q} salió de la zona marcada (por ${p.zoneLastSide || '?'}) · salidas: ${p.zoneExitCount}` },
+  zona_tiempo_dentro: { key: 'watchZoneInside', icon: '⏱️', text: (q, p) => `${q} lleva ${p.zoneElapsedS} s adentro de la zona marcada (configurado: ${settings.watchDwellInS} s)` },
+  zona_tiempo_fuera: { key: 'watchZoneOutside', icon: '⏱️', text: (q, p) => `${q} lleva ${p.zoneElapsedS} s afuera de la zona marcada (configurado: ${settings.watchDwellOutS} s)` },
 };
 
 async function onActivity(ev, person, total, w, h, source) {
@@ -913,10 +926,10 @@ async function onActivity(ev, person, total, w, h, source) {
   person.track.lastEv[ev] = now;
 
   const quien = `Persona ${person.id}`;
-  addLog(a.text(quien));
+  addLog(a.text(quien, person));
   if (!settings[a.key]) return; // el usuario no pidió este aviso por Telegram
   const cuantas = total === 1 ? '1 persona a la vista' : `${total} personas a la vista`;
-  const text = `📍 ${nombreVisible()}\n${a.icon} ${a.text(quien)}\n👥 ${cuantas}\n🕒 ${new Date().toLocaleString()}`;
+  const text = `📍 ${nombreVisible()}\n${a.icon} ${a.text(quien, person)}\n👥 ${cuantas}\n🕒 ${new Date().toLocaleString()}`;
   // Primero el texto solo (liviano, llega rápido aunque la red del celular esté lenta),
   // y la foto aparte después: así el aviso no espera a que termine de subir la imagen.
   try {
@@ -929,7 +942,7 @@ async function onActivity(ev, person, total, w, h, source) {
   if (settings.sendPhoto) {
     try {
       const image = personPhoto(source, w, h, person.box);
-      sendAlert({ text: `📷 Foto de: ${a.text(quien)}`, imageDataUrl: image }).catch((e) => addLog(`No se pudo enviar la foto: ${e.message}`, 'alert'));
+      sendAlert({ text: `📷 Foto de: ${a.text(quien, person)}`, imageDataUrl: image }).catch((e) => addLog(`No se pudo enviar la foto: ${e.message}`, 'alert'));
     } catch (e) { console.warn('No se pudo capturar la foto', e); }
   }
 }
@@ -1034,19 +1047,25 @@ let watchDraft = null;
 
 function refreshWatchZoneInfo() {
   const n = (settings.watchZones || []).length;
-  els.watchZoneInfo.textContent = watchMarking
+  const anyEnabled = settings.watchZoneEnter || settings.watchZoneExit || settings.watchZoneInside || settings.watchZoneOutside;
+  const entradas = people.tracks.reduce((s, t) => s + (t.act.zoneEnterCount || 0), 0);
+  const salidas = people.tracks.reduce((s, t) => s + (t.act.zoneExitCount || 0), 0);
+  const contador = n ? ` · Entradas: ${entradas} · Salidas: ${salidas}` : '';
+  els.watchZoneInfo.textContent = (watchMarking
     ? 'Arrastre el dedo sobre la imagen, de una esquina de la zona a la otra.'
-    : n ? `Zona marcada. Avisa al entrar, al salir, y si se queda ${settings.watchDwellS} s adentro.` : 'No hay ninguna zona marcada.';
+    : n ? 'Zona marcada.' : 'No hay ninguna zona marcada.') + contador;
   els.watchZoneClearBtn.disabled = !n;
   els.watchZoneMarkBtn.textContent = watchMarking ? 'Cancelar' : '📍 Marcar zona';
-  els.watchZoneMarkBtn.disabled = !settings.watchZoneEnabled;
-  els.watchZoneClearBtn.disabled = !settings.watchZoneEnabled || !n;
+  els.watchZoneMarkBtn.disabled = !anyEnabled;
+  els.watchZoneClearBtn.disabled = !anyEnabled || !n;
+  if (els.watchZoneResetBtn) els.watchZoneResetBtn.disabled = !n;
 }
 
 function setupWatchZone() {
   if (!Array.isArray(settings.watchZones)) settings.watchZones = [];
   const viewer = els.overlay.parentElement;
   els.watchZoneMarkBtn.addEventListener('click', () => {
+    if (!(settings.watchZoneEnter || settings.watchZoneExit || settings.watchZoneInside || settings.watchZoneOutside)) return;
     if (!watchMarking && !running) { addLog('Primero toque Iniciar para ver la imagen y después marque la zona.', 'alert'); return; }
     bedMarking = false; // no se puede marcar las dos cosas a la vez
     watchMarking = !watchMarking;
@@ -1058,6 +1077,11 @@ function setupWatchZone() {
     if (!confirm('¿Borrar la zona marcada?')) return;
     settings.watchZones = [];
     saveSettings();
+    refreshWatchZoneInfo();
+  });
+  els.watchZoneResetBtn?.addEventListener('click', () => {
+    people.resetZoneCounters();
+    addLog('Contadores de entradas/salidas de zona reiniciados');
     refreshWatchZoneInfo();
   });
   viewer.addEventListener('pointerdown', (ev) => {

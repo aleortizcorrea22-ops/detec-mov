@@ -169,6 +169,11 @@ export class PeopleTracker {
     }
   }
 
+  /** Pone en 0 los contadores de entradas/salidas de la zona de todas las personas que se están siguiendo ahora. */
+  resetZoneCounters() {
+    for (const t of this.tracks) t.act.resetZoneCounters();
+  }
+
   /** @returns {Array<{id:number, index:number, track:object}>} una entrada por cada pose recibida */
   update(poses, w, h, now) {
     const anchors = poses.map((p) => poseAnchor(p, w, h));
@@ -224,6 +229,17 @@ const ANKLE = { L: 27, R: 28 };
 /** ¿El punto (en píxeles) cae dentro de alguna zona marcada? Zonas en coordenadas 0..1. */
 export function inZones(pt, zones, w, h) {
   return (zones || []).some((z) => pt.x >= z.x * w && pt.x <= (z.x + z.w) * w && pt.y >= z.y * h && pt.y <= (z.y + z.h) * h);
+}
+
+/** ¿Por qué lado del recuadro de la zona está más cerca el punto? (para decir "entró por la
+ * derecha", etc.). pt y zone en las mismas unidades (0..1 de la imagen). */
+export function ladoDeZona(pt, zone) {
+  if (!zone) return null;
+  const left = zone.x, right = zone.x + zone.w, top = zone.y, bottom = zone.y + zone.h;
+  // Cuánto se pasa el punto de cada lado del recuadro (positivo = afuera de ese lado).
+  // El lado con más "afuera" es por el que entró o salió.
+  const d = { izquierda: left - pt.x, derecha: pt.x - right, arriba: top - pt.y, abajo: pt.y - bottom };
+  return Object.entries(d).sort((a, b) => b[1] - a[1])[0][0];
 }
 
 /** ¿Tiene uno de los dos brazos bien levantado (como pidiendo algo o llamando)?
@@ -347,32 +363,57 @@ export class ActivityTracker {
     this.zoneInside = false;
     this.zoneSince = null;
     this.zoneAlerted = false;
+    // Contadores de cuántas veces entró/salió, y por qué lado cada vez.
+    this.zoneEnterCount = 0;
+    this.zoneExitCount = 0;
+    this.zoneLastSide = null;
+    this.lastHipNorm = null; // posición anterior (0..1), para saber por dónde se cruzó la zona
+  }
+
+  /** Vuelve a 0 los contadores de entradas/salidas de la zona (lo pide el usuario, cuando quiera). */
+  resetZoneCounters() {
+    this.zoneEnterCount = 0;
+    this.zoneExitCount = 0;
+    this.zoneLastSide = null;
   }
 
   /** @returns {{posture:string, walking:boolean, events:string[], lyingNow:boolean, inBed:boolean, huboPosturaNormalAntes:boolean}} */
-  update(pose, w, h, now, { bedZones = [], detectarBrazoArriba = false, watchZones = [], watchDwellMs = null } = {}) {
+  update(pose, w, h, now, {
+    bedZones = [], detectarBrazoArriba = false, watchZones = [],
+    watchEnter = false, watchExit = false, watchInsideMs = null, watchOutsideMs = null,
+  } = {}) {
     const events = [];
     const p = classifyPosture(pose, w, h, bedZones);
     const s = p.posture === 'acostada' && p.inBed ? 'cama' : p.posture;
 
-    // --- zona de interés: entrar/salir, y "lleva más de X tiempo ahí" ---
+    // --- zona de interés: 4 avisos independientes, cada uno con su propio tilde:
+    // entra, sale, lleva mucho tiempo ADENTRO (su propio tiempo) y lleva mucho tiempo
+    // AFUERA (otro tiempo distinto, los dos los define el usuario). ---
     if (watchZones.length && p.hip) {
       const dentro = inZones(p.hip, watchZones, w, h);
+      const hipNorm = { x: p.hip.x / w, y: p.hip.y / h };
       if (dentro !== this.zoneInside) {
         this.zoneInside = dentro;
-        if (dentro) {
-          this.zoneSince = now;
-          this.zoneAlerted = false;
-          events.push('zona_entra');
-        } else {
-          this.zoneSince = null;
-          this.zoneAlerted = false;
-          events.push('zona_sale');
+        this.zoneSince = now;
+        this.zoneAlerted = false;
+        // Al entrar, el lado se mira desde DÓNDE VENÍA (la posición de afuera, el cuadro
+        // anterior); al salir, desde dónde está AHORA (recién afuera). Así dice "por dónde"
+        // de verdad cruzó, no un lado cualquiera que le quede cerca adentro de la zona.
+        this.zoneLastSide = ladoDeZona(dentro ? (this.lastHipNorm || hipNorm) : hipNorm, watchZones[0]);
+        if (dentro) { this.zoneEnterCount++; if (watchEnter) events.push('zona_entra'); }
+        else { this.zoneExitCount++; if (watchExit) events.push('zona_sale'); }
+      } else {
+        if (this.zoneSince === null) this.zoneSince = now; // primera vez que se ve a esta persona
+        if (this.zoneAlerted) { /* ya avisado para este tramo */ }
+        else if (dentro && watchInsideMs && now - this.zoneSince >= watchInsideMs) {
+          this.zoneAlerted = true;
+          events.push('zona_tiempo_dentro');
+        } else if (!dentro && watchOutsideMs && now - this.zoneSince >= watchOutsideMs) {
+          this.zoneAlerted = true;
+          events.push('zona_tiempo_fuera');
         }
-      } else if (dentro && watchDwellMs && !this.zoneAlerted && this.zoneSince !== null && now - this.zoneSince >= watchDwellMs) {
-        this.zoneAlerted = true;
-        events.push('zona_tiempo');
       }
+      this.lastHipNorm = hipNorm;
     }
 
     // --- brazo levantado (pidiendo algo / llamando) ---
@@ -434,6 +475,11 @@ export class ActivityTracker {
         }
       }
     }
-    return { posture: this.state || 'desconocida', walking: this.walking, events, lyingNow: p.posture === 'acostada', inBed: p.inBed, huboPosturaNormalAntes: this.huboPosturaNormalAntes };
+    return {
+      posture: this.state || 'desconocida', walking: this.walking, events, lyingNow: p.posture === 'acostada', inBed: p.inBed,
+      huboPosturaNormalAntes: this.huboPosturaNormalAntes,
+      zoneEnterCount: this.zoneEnterCount, zoneExitCount: this.zoneExitCount, zoneLastSide: this.zoneLastSide,
+      zoneInsideNow: this.zoneInside, zoneElapsedMs: this.zoneSince !== null ? now - this.zoneSince : 0,
+    };
   }
 }
