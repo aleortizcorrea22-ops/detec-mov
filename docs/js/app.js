@@ -5,7 +5,7 @@ import { setupInstallButton } from './install.js';
 // Visible en pantalla (junto al nombre) para confirmar de un vistazo si el celular/PC ya
 // tiene la versión más nueva, sin tener que abrir herramientas de desarrollador. Se sube
 // junto con el VERSION de sw.js en cada cambio.
-const APP_VERSION = 'v63';
+const APP_VERSION = 'v64';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo, loadLicenciaConfig } from './licencia.js';
 import { iniciarPanelAdmin, NOMBRE_ADMIN_SECRETO } from './admin-panel.js';
@@ -1270,6 +1270,15 @@ async function refreshTelegramStatus() {
   const direct = loadDirectConfig();
   els.directToken.value = direct.token;
   els.directChatIds.value = direct.chatIds.join(',');
+  // Un chat_id de GRUPO siempre empieza con "-" (negativo); uno sin el "-" es tu chat
+  // PRIVADO con el bot (vos mismo), nunca el de la familia. Avisar esto solo con abrir
+  // la app, sin que haga falta volver a buscar nada, para los casos en que ya quedó
+  // guardado mal de antes (por ejemplo, de una búsqueda vieja con un bug ya arreglado).
+  const privados = direct.chatIds.filter((c) => !c.startsWith('-'));
+  if (privados.length) {
+    els.tgStatus.textContent = `⚠️ El chat_id ${privados.join(', ')} es TU CHAT PRIVADO con el bot, no el grupo de la familia (los de un grupo siempre empiezan con "-"). Borralo del campo de abajo y volvé a tocar "Buscar mi chat_id".`;
+    return;
+  }
   els.tgStatus.textContent = direct.token && direct.chatIds.length
     ? `Configurado en este dispositivo: las alertas se mandan directo a ${direct.chatIds.length} chat(s), sin servidor.`
     : 'No hay ningún servidor detrás de esta app: cargá el token del bot y el chat_id acá abajo para que las alertas salgan directo desde este dispositivo.';
