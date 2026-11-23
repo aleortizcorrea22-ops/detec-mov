@@ -1313,7 +1313,7 @@ els.findChatBtn.addEventListener('click', async () => {
   els.chatList.hidden = false;
   els.chatList.textContent = 'Buscando…';
   try {
-    const chats = hasBackend ? (await (await fetch('/api/telegram/chats')).json()).chats : await findDirectChats();
+    const chats = hasBackend ? (await (await fetch('/api/telegram/chats')).json()).chats : await findDirectChats(els.directToken.value);
     els.chatList.textContent = chats.length
       ? chats.map((c) => `${c.id}  ${c.name || ''} (${c.type})`).join('\n') + (hasBackend
         ? '\n\nCopia el número en TELEGRAM_CHAT_ID del .env y reinicia el servidor.'

@@ -121,9 +121,11 @@ export async function sendDirectAlert({ text, imageDataUrl }) {
   return sent;
 }
 
-/** Busca los chats que le escribieron algo al bot, para ayudar a encontrar el chat_id. */
-export async function findDirectChats() {
-  const { token } = loadDirectConfig();
+/** Busca los chats que le escribieron algo al bot, para ayudar a encontrar el chat_id.
+ * Usa el token que se le pase (por ejemplo el que está escrito en el campo, aunque
+ * todavía no se haya guardado) y si no se pasa ninguno, el que ya está guardado. */
+export async function findDirectChats(token) {
+  token = String(token || '').trim() || loadDirectConfig().token;
   if (!token) throw new Error('Cargá primero el token del bot');
   const updates = await call(token, 'getUpdates', new URLSearchParams({ limit: '50' }));
   const chats = new Map();
