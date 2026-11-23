@@ -130,8 +130,12 @@ export async function findDirectChats(token) {
   const updates = await call(token, 'getUpdates', new URLSearchParams({ limit: '50' }));
   const chats = new Map();
   for (const u of updates) {
-    const chat = (u.message || u.channel_post || u.my_chat_member || {}).chat;
-    if (chat) chats.set(chat.id, { id: chat.id, type: chat.type, name: chat.title || [chat.first_name, chat.last_name].filter(Boolean).join(' ') || chat.username });
+    const chat = (u.message || u.channel_post || u.my_chat_member || u.edited_message || {}).chat;
+    // El chat privado con el bot (vos mismo escribiéndole) nunca es el chat_id de un
+    // sistema: eso manda el aviso solo a tu chat privado, no al grupo de la familia.
+    if (chat && chat.type !== 'private') chats.set(chat.id, { id: chat.id, type: chat.type, name: chat.title || chat.username });
+    const migrado = u.message?.migrate_to_chat_id;
+    if (migrado && chat) { chats.delete(chat.id); chats.set(migrado, { id: migrado, type: 'supergroup', name: chat.title || chat.username }); }
   }
   return [...chats.values()];
 }
