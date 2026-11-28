@@ -5,7 +5,7 @@ import { setupInstallButton } from './install.js';
 // Visible en pantalla (junto al nombre) para confirmar de un vistazo si el celular/PC ya
 // tiene la versión más nueva, sin tener que abrir herramientas de desarrollador. Se sube
 // junto con el VERSION de sw.js en cada cambio.
-const APP_VERSION = 'v77';
+const APP_VERSION = 'v78';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo, loadLicenciaConfig } from './licencia.js';
 import { iniciarPanelAdmin, NOMBRE_ADMIN_SECRETO } from './admin-panel.js';
@@ -683,13 +683,11 @@ function processFrame({ source, w, h }) {
   let poses = filtrarPosesDuplicadas(poseRes.landmarks || [], w, h);
   const rawPoseCount = poses.length;
 
-  // PRIMER FILTRO, antes de seguir a nadie como persona: tiene que haber evidencia real
-  // de cuerpo humano (cara creíble — ojos, nariz — o una pierna de confianza alta). Un
-  // ventilador de techo, un respaldo tapizado, o cualquier objeto que se mueva puede
-  // "completar" un esqueleto con hombros y cadera para el modelo de pose, pero no le
-  // puede inventar una cara ni una pierna de verdad. Sin esto, ni siquiera se lo empieza
-  // a numerar como "Persona N": no llega a la pantalla ni a ninguna alerta.
-  poses = poses.filter(evidenciaDeCuerpoReal);
+  // (Hubo acá un filtro que exigía evidenciaDeCuerpoReal en CADA cuadro suelto, antes de
+  // seguir a nadie — se sacó: sin memoria ni tolerancia, un solo cuadro con la cara de
+  // perfil o con desenfoque cortaba el seguimiento de raíz y costaba horrores volver a
+  // detectar a una persona real. La protección de verdad (con 6 s de memoria) sigue más
+  // abajo, por seguimiento: `cuerpoRealConfirmado`.)
 
   // Verificación extra con un detector de objetos tipo COCO (misma familia que YOLO):
   // sabe distinguir "persona" de taza, mouse, teclado, lata, silla, etc., algo que el
@@ -713,12 +711,13 @@ function processFrame({ source, w, h }) {
         cachedPersonBoxes = null;
       }
     }
-    // Si hace rato que el verificador no confirma a NADIE (ni siquiera cuando el
-    // modelo de pose sí ve a alguien), es que no está pudiendo confirmar en este
-    // equipo/lugar (poca luz, ángulo, cámara floja) y no se debe confiar en él: mejor
-    // dejar pasar las poses sin ese filtro que esconder a la persona por completo.
-    const confiable = cachedPersonBoxes && !(objSinPersonaDesde && ts - objSinPersonaDesde > 8000);
-    if (confiable) poses = poses.filter((pose) => poseConfirmadaComoPersona(pose, cachedPersonBoxes, w, h));
+    // (Acá hubo un filtro que sacaba directamente de `poses` — antes de seguir a nadie —
+    // cualquier pose sin una caja "persona" de COCO superpuesta EN ESE CUADRO exacto, sin
+    // memoria ni tolerancia. Mismo problema que el filtro de arriba: una persona real podía
+    // perderse de `poses` un cuadro por mala suerte del verificador y no volver a
+    // detectarse nunca más, aunque el seguimiento siguiera activo. `cachedPersonBoxes`
+    // igual se sigue calculando arriba: lo usa `personaVerificada`, más abajo, por
+    // seguimiento y con 6 s de memoria — mucho más tolerante.)
   }
 
   const handRes = settings.useHands && poses.length ? handLandmarker.detectForVideo(source, ts) : null;
