@@ -339,6 +339,21 @@ export function inZones(pt, zones, w, h) {
   return (zones || []).some((z) => pointInPolygon(pt, zonePoints(z).map((p) => ({ x: p.x * w, y: p.y * h }))));
 }
 
+/** Intersección sobre unión de dos cajas {x0,y0,x1,y1} (cualquier unidad, la misma en las dos). */
+export function iouCajas(a, b) {
+  const iw = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0);
+  const ih = Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0);
+  if (iw <= 0 || ih <= 0) return 0;
+  const inter = iw * ih;
+  const union = (a.x1 - a.x0) * (a.y1 - a.y0) + (b.x1 - b.x0) * (b.y1 - b.y0) - inter;
+  return union > 0 ? inter / union : 0;
+}
+
+/** Caja {x0,y0,x1,y1} (0..1) → zona de 4 vértices, igual que una cama marcada a mano. */
+export function zonaDeCaja(c) {
+  return { pts: [{ x: c.x0, y: c.y0 }, { x: c.x1, y: c.y0 }, { x: c.x1, y: c.y1 }, { x: c.x0, y: c.y1 }] };
+}
+
 /** Centro de la parte de arriba del cuerpo (cara y hombros) en píxeles, o null si se ven
  * menos de 2 de esos puntos. Sirve para saber si alguien está en la cama sin depender de las
  * caderas, que de noche y tapado casi nunca se ven. */

@@ -1,11 +1,11 @@
 import { evaluateFrame, P, manoAbajo } from './rules.js';
-import { PeopleTracker, assignHands, poseBox, filtrarPosesDuplicadas, zonePoints, evidenciaDeCuerpoReal, brazoLevantado, manoNoPersona, eventosPendientes, enZonaCama } from './people.js';
+import { PeopleTracker, assignHands, poseBox, filtrarPosesDuplicadas, zonePoints, evidenciaDeCuerpoReal, brazoLevantado, manoNoPersona, eventosPendientes, enZonaCama, iouCajas, zonaDeCaja } from './people.js';
 import { setupInstallButton } from './install.js';
 
 // Visible en pantalla (junto al nombre) para confirmar de un vistazo si el celular/PC ya
 // tiene la versión más nueva, sin tener que abrir herramientas de desarrollador. Se sube
 // junto con el VERSION de sw.js en cada cambio.
-const APP_VERSION = 'v90';
+const APP_VERSION = 'v91';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo, loadLicenciaConfig } from './licencia.js';
 import { iniciarPanelAdmin, NOMBRE_ADMIN_SECRETO } from './admin-panel.js';
@@ -62,7 +62,7 @@ const DEFAULTS = {
   deviceName: '', deviceNameAsked: false, maxPeople: 3, alertCabeza: true, detectFalls: true, fallHoldS: 3,
   // Actividades: siempre se anotan en Eventos; a Telegram solo si se activa cada una.
   alertSento: false, alertLevanto: false, alertCamaEntra: false, alertCamaSale: false, alertCamina: false, alertQuieta: false, alertPideAyuda: false,
-  bedZones: [], modoCama: true,
+  bedZones: [], modoCama: true, bedAuto: null,
   watchZoneEnter: false, watchZoneExit: false, watchZoneInside: false, watchZoneOutside: false,
   watchZones: [], watchDwellInS: 10, watchDwellInUnit: 's', watchDwellOutS: 30, watchDwellOutUnit: 's',
   // Contadores de entradas/salidas: NO van dentro del seguimiento de cada persona (eso se
@@ -164,7 +164,7 @@ function bindSettings() {
   on(els.alertCabeza, 'alertCabeza');
   on(els.detectFalls, 'detectFalls');
   on(els.modoCama, 'modoCama');
-  els.modoCama.addEventListener('change', aplicarUmbralesPose);
+  els.modoCama.addEventListener('change', () => { aplicarUmbralesPose(); refreshBedInfo(); });
   for (const k of ACTIVITY_KEYS) on(els[k], k);
   setupBedZones();
   setupWatchZone();
@@ -290,7 +290,12 @@ function modelUrl(key) {
 // real de un cuarto: persona acostada COCO 0.2-0.8; esqueleto fantasma sobre una manta ~0.1-0.2.
 const POSE_CONF_NORMAL = 0.5;
 const POSE_CONF_CAMA = 0.15;
-function modoCamaActivo() { return !!settings.modoCama && Array.isArray(settings.bedZones) && settings.bedZones.length > 0; }
+// Camas que cuentan: las marcadas a mano; si no hay ninguna, la que el sistema detectó solo.
+function zonasCama() {
+  if (Array.isArray(settings.bedZones) && settings.bedZones.length) return settings.bedZones;
+  return settings.modoCama && settings.bedAuto?.pts ? [{ pts: settings.bedAuto.pts }] : [];
+}
+function modoCamaActivo() { return !!settings.modoCama && zonasCama().length > 0; }
 function umbralPose() { return modoCamaActivo() ? POSE_CONF_CAMA : POSE_CONF_NORMAL; }
 function aplicarUmbralesPose() {
   if (!poseLandmarker) return;
@@ -340,8 +345,8 @@ async function loadModels() {
         baseOptions: { modelAssetPath: modelUrl('object'), delegate: 'CPU' },
         runningMode: 'IMAGE',
         scoreThreshold: 0.05,
-        maxResults: 5,
-        categoryAllowlist: ['person'],
+        maxResults: 8,
+        categoryAllowlist: ['person', 'bed'],
       });
     } catch (e) {
       // Sin esto, la app sigue andando con los chequeos de geometría nada más (menos
@@ -730,6 +735,54 @@ function puntajePersonaEnRecorte(source, pose, w, h) {
   return mejor;
 }
 
+// DETECCIÓN AUTOMÁTICA DE LA CAMA (modo cama sin cama marcada a mano). COCO tiene la clase "bed":
+// medido en el video real de un cuarto, la reconoce en todos los cuadros con puntaje 0.66-0.79 y un
+// recuadro estable. Se busca cada 3 s hasta tener la misma caja 3 veces seguidas; después se
+// revalida cada 10 min (por si movieron el celular). Una cama marcada a mano siempre manda.
+const CAMA_AUTO_SCORE = 0.4;
+const CAMA_AUTO_CHEQUEO_MS = 3000;
+const CAMA_AUTO_REVALIDAR_MS = 600000;
+const CAMA_AUTO_CONSISTENTES = 3;
+let camaAutoAt = 0;
+let camaCandidata = null;
+let camaCandidataN = 0;
+
+function camaAutoCheck(source, w, h, now) {
+  if (!settings.modoCama || (settings.bedZones && settings.bedZones.length)) return;
+  if (!objectDetector || objectDetectorFailed) return;
+  const espera = camaCandidata || !settings.bedAuto ? CAMA_AUTO_CHEQUEO_MS : CAMA_AUTO_REVALIDAR_MS;
+  if (now - camaAutoAt < espera) return;
+  camaAutoAt = now;
+  try {
+    const k = Math.min(1, COCO_CROP_MAX / Math.max(w, h));
+    cropCanvas.width = Math.max(8, Math.round(w * k));
+    cropCanvas.height = Math.max(8, Math.round(h * k));
+    cropCtx.drawImage(source, 0, 0, w, h, 0, 0, cropCanvas.width, cropCanvas.height);
+    let mejor = null;
+    for (const d of objectDetector.detect(cropCanvas).detections || []) {
+      const c = d.categories?.[0];
+      if (c?.categoryName !== 'bed' || c.score < CAMA_AUTO_SCORE) continue;
+      if (!mejor || c.score > mejor.score) mejor = { score: c.score, b: d.boundingBox };
+    }
+    if (!mejor) { camaCandidata = null; camaCandidataN = 0; return; }
+    const cw = cropCanvas.width;
+    const ch = cropCanvas.height;
+    const rec = (v) => Math.min(1, Math.max(0, v));
+    const caja = { x0: rec(mejor.b.originX / cw), y0: rec(mejor.b.originY / ch), x1: rec((mejor.b.originX + mejor.b.width) / cw), y1: rec((mejor.b.originY + mejor.b.height) / ch) };
+    if (settings.bedAuto?.caja && iouCajas(caja, settings.bedAuto.caja) >= 0.6) { camaCandidata = null; camaCandidataN = 0; return; }
+    if (camaCandidata && iouCajas(caja, camaCandidata) >= 0.6) camaCandidataN++; else { camaCandidata = caja; camaCandidataN = 1; }
+    if (camaCandidataN >= CAMA_AUTO_CONSISTENTES) {
+      settings.bedAuto = { pts: zonaDeCaja(camaCandidata).pts, caja: camaCandidata };
+      saveSettings();
+      camaCandidata = null;
+      camaCandidataN = 0;
+      aplicarUmbralesPose();
+      refreshBedInfo();
+      addLog('Cama detectada automáticamente');
+    }
+  } catch (e) { console.warn('No se pudo detectar la cama', e); }
+}
+
 function processFrame({ source, w, h }) {
   let ts = performance.now();
   if (ts <= lastTs) ts = lastTs + 1;
@@ -763,6 +816,7 @@ function processFrame({ source, w, h }) {
     else addLog(`Diagnóstico: el detector de pose ve ${rawPoseCount} cuerpo(s), pero se descartaron (sin cara ni pierna creíble visible, o el verificador extra no los confirmó).`);
   }
 
+  camaAutoCheck(source, w, h, now);
   let cropEnEstaPasada = false; // a lo sumo un recorte por cuadro: acota el costo en el celular
   // Evalúa a cada persona por separado.
   const list = people.update(poses, w, h, now).map((p) => {
@@ -784,7 +838,7 @@ function processFrame({ source, w, h }) {
     }
     const esMano = (now - (p.track.manoVistaAt || 0)) <= MANO_BLOQUEO_MS;
     // Modo cama: con la casilla activa y la parte de arriba del cuerpo adentro de una cama marcada.
-    const enCama = modoCamaActivo() && enZonaCama(pose, w, h, settings.bedZones);
+    const enCama = modoCamaActivo() && enZonaCama(pose, w, h, zonasCama());
     const ventanaConf = enCama ? CAMA_CONFIRM_WINDOW_MS : FALL_CONFIRM_WINDOW_MS;
     if (!esMano && objectDetector && !objectDetectorFailed) {
       const yaConfirmado = (now - (p.track.lastConfirmedPerson || 0)) <= ventanaConf;
@@ -840,7 +894,9 @@ function processFrame({ source, w, h }) {
       || (verificadorSinNadieHaceMucho && !!p.track.lastConfirmedPerson));
     const personaFuerte = !esMano && (!hayVerificador || (personaVerificada && (p.track.lastConfirmedScore || 0) >= (enCama ? COCO_SCORE_CAMA_MANTENER : COCO_SCORE_ALERTA)));
     if (evidenciaDeCuerpoReal(pose)) p.track.lastBodyEvidenceAt = now;
-    const cuerpoRealConfirmado = (now - (p.track.lastBodyEvidenceAt || 0)) <= ventanaConf;
+    // En la cama la prueba de que es una persona es COCO (promedio móvil ya confirmado); no se exige una
+    // cara creíble: rascándose la cabeza el brazo le tapa la cara, justo el caso que hay que detectar.
+    const cuerpoRealConfirmado = enCama ? personaVerificada : (now - (p.track.lastBodyEvidenceAt || 0)) <= ventanaConf;
 
     // Toque de cabeza: casilla que se puede apagar (activada por defecto, es la detección
     // original del proyecto). Si está apagada, directamente no se analiza nada de esto
@@ -876,7 +932,7 @@ function processFrame({ source, w, h }) {
     }
     const watchAny = settings.watchZoneEnter || settings.watchZoneExit || settings.watchZoneInside || settings.watchZoneOutside;
     const act = p.track.act.update(pose, w, h, now, {
-      bedZones: settings.bedZones,
+      bedZones: zonasCama(),
       detectarBrazoArriba: settings.alertPideAyuda,
       manos: handsByPose[p.index],
       watchZones: watchAny ? settings.watchZones : [],
@@ -1200,7 +1256,7 @@ function refreshBedInfo() {
   const n = settings.bedZones.length;
   els.bedInfo.textContent = bedMarking
     ? `Toque cada esquina de la cama en orden (lleva ${bedDraft ? bedDraft.length : 0} punto${bedDraft && bedDraft.length === 1 ? '' : 's'}, mínimo 3) y después toque "Listo".`
-    : n ? `${n} cama${n > 1 ? 's' : ''} marcada${n > 1 ? 's' : ''}. Acostada ahí = "en la cama" (no es caída). Para ajustar la forma, arrastre cualquier vértice (punto) sobre la imagen.` : 'No hay camas marcadas: si alguien se acuesta, se toma como caída.';
+    : n ? `${n} cama${n > 1 ? 's' : ''} marcada${n > 1 ? 's' : ''}. Acostada ahí = "en la cama" (no es caída). Para ajustar la forma, arrastre cualquier vértice (punto) sobre la imagen.` : (settings.modoCama && settings.bedAuto ? 'Cama detectada automáticamente por el sistema (se dibuja con línea de puntos). Si quiere ajustarla, márquela a mano con "Marcar una cama".' : 'No hay camas marcadas: si alguien se acuesta, se toma como caída.');
   els.bedClearBtn.disabled = !n;
   els.bedMarkBtn.textContent = bedMarking ? 'Cancelar' : '🛏️ Marcar una cama';
   if (els.bedDoneBtn) {
@@ -1325,6 +1381,11 @@ function drawBedZones(w, h) {
   for (const z of zones) {
     drawPoligono(w, h, z.pts, {
       color: 'rgba(96,165,250,.95)', fill: 'rgba(96,165,250,.10)', label: '🛏️ CAMA', fs, vertexHandles: true,
+    });
+  }
+  if (!zones.length && settings.modoCama && settings.bedAuto?.pts) {
+    drawPoligono(w, h, settings.bedAuto.pts, {
+      color: 'rgba(96,165,250,.95)', fill: 'rgba(96,165,250,.08)', label: '🛏️ CAMA (automática)', fs, vertexHandles: false,
     });
   }
   if (bedMarking && bedDraft) {
