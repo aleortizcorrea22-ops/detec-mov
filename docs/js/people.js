@@ -14,6 +14,25 @@ const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 
 export const HIP = { L: 23, R: 24 };
 
+/**
+ * ¿Hay evidencia real de que esto es un CUERPO HUMANO (y no, por ejemplo, una mano sola
+ * cerca de cámara con hombros y cadera "completados" por el modelo)? Dos pruebas
+ * independientes, cualquiera alcanza, pero ninguna se conforma con un punto suelto:
+ *  - Cara creíble: los dos ojos, las dos orejas, o la nariz + un ojo (nunca un solo
+ *    punto de cara aislado, que el modelo adivina seguido sin que haya nadie ahí).
+ *  - Pierna creíble: al menos una rodilla con confianza ALTA (0.70, no el mínimo general
+ *    de 0.55 — es el punto que más se "inventa" con mantas o objetos de por medio).
+ * Se usa para la caída (la alerta más grave): sin cara NI piernas, no se arriesga nada.
+ */
+export function evidenciaDeCuerpoReal(pose) {
+  const ojos = vis(pose[P.L_EYE]) && vis(pose[P.R_EYE]);
+  const orejas = vis(pose[P.L_EAR]) && vis(pose[P.R_EAR]);
+  const narizYOjo = vis(pose[P.NOSE]) && (vis(pose[P.L_EYE]) || vis(pose[P.R_EYE]));
+  const caraCreible = ojos || orejas || narizYOjo;
+  const piernaCreible = [pose[25], pose[26]].some((k) => k && k.visibility !== undefined && k.visibility >= 0.7);
+  return caraCreible || piernaCreible;
+}
+
 /** Recuadro (en píxeles) de los puntos visibles de una persona. */
 export function poseBox(pose, w, h) {
   const pts = pose.filter(vis).map((l) => px(l, w, h));
@@ -255,9 +274,39 @@ export class PeopleTracker {
 const KNEE = { L: 25, R: 26 };
 const ANKLE = { L: 27, R: 28 };
 
-/** ¿El punto (en píxeles) cae dentro de alguna zona marcada? Zonas en coordenadas 0..1. */
+/**
+ * Puntos (vértices) de una zona, en coordenadas 0..1.
+ * Soporta el formato nuevo (polígono libre, `pts`: lista de {x,y}, 3 o más puntos —
+ * la cama puede dibujarse con cualquier forma, no solo un rectángulo) y, para no perder
+ * las camas ya marcadas antes de este cambio, el formato viejo (`{x,y,w,h}`, rectángulo),
+ * que se convierte sobre la marcha a sus 4 vértices.
+ */
+export function zonePoints(zone) {
+  if (Array.isArray(zone.pts) && zone.pts.length >= 3) return zone.pts;
+  return [
+    { x: zone.x, y: zone.y },
+    { x: zone.x + zone.w, y: zone.y },
+    { x: zone.x + zone.w, y: zone.y + zone.h },
+    { x: zone.x, y: zone.y + zone.h },
+  ];
+}
+
+/** ¿El punto (x,y) cae dentro del polígono (lista de {x,y}, mismas unidades)? */
+function pointInPolygon(pt, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i].x; const yi = poly[i].y;
+    const xj = poly[j].x; const yj = poly[j].y;
+    const cruza = (yi > pt.y) !== (yj > pt.y) && pt.x < ((xj - xi) * (pt.y - yi)) / (yj - yi) + xi;
+    if (cruza) inside = !inside;
+  }
+  return inside;
+}
+
+/** ¿El punto (en píxeles) cae dentro de alguna zona marcada? Zonas en coordenadas 0..1,
+ * cualquier forma (polígono) con 3 vértices o más. */
 export function inZones(pt, zones, w, h) {
-  return (zones || []).some((z) => pt.x >= z.x * w && pt.x <= (z.x + z.w) * w && pt.y >= z.y * h && pt.y <= (z.y + z.h) * h);
+  return (zones || []).some((z) => pointInPolygon(pt, zonePoints(z).map((p) => ({ x: p.x * w, y: p.y * h }))));
 }
 
 /** ¿Por qué lado del recuadro de la zona está más cerca el punto? (para decir "entró por la
@@ -381,6 +430,14 @@ export class ActivityTracker {
     // objeto que "nace" ya con pose de acostado (un cable, una caja en el piso) cuente
     // como una caída real, sin tener que esperar a ver primero a una persona de pie.
     this.huboPosturaNormalAntes = false;
+    // Picos recientes de velocidad de la cadera (en "troncos por segundo"), para saber si
+    // hubo un movimiento BRUSCO hace poco (una caída real es rápida: de pie/sentado a
+    // tirado en 1-2 segundos). Acostarse a propósito (a descansar, a dormir) es lento y
+    // controlado (sentarse en el borde, acomodar las piernas, recostarse de a poco): no
+    // llega a ese pico de velocidad. Así se distingue una caída real de alguien
+    // acostándose, SIN necesitar marcar la cama (sirve para cámaras donde no se puede
+    // marcar nada, ej. cámaras IP ajenas a la app).
+    this.speedTrail = []; // [{t, speed}]
     // Brazo levantado (pidiendo algo): se analiza antes/durante/después. Solo se calcula
     // si se pide explícitamente (ver opts.detectarBrazoArriba), para no gastar de más en
     // quien no activó esta opción.
@@ -488,6 +545,13 @@ export class ActivityTracker {
       if (dt >= this.windowMs / 2000) {
         const torso = this.trail.reduce((a, b) => a + b.torso, 0) / this.trail.length;
         const speed = Math.hypot(p.hip.x - first.x, p.hip.y - first.y) / torso / dt;
+        // Guarda este pico de velocidad un rato (PEAK_WINDOW_MS), para poder consultarlo
+        // más tarde: justo cuando se termina de CONFIRMAR una caída (tras quedarse quieta
+        // tirada un rato, ver stableMs), la velocidad "de ahora" ya es casi cero (se
+        // quedó quieta) — lo que importa es si hubo un pico rápido hace poquito.
+        this.speedTrail.push({ t: now, speed });
+        const PEAK_WINDOW_MS = 4000;
+        while (this.speedTrail.length && now - this.speedTrail[0].t > PEAK_WINDOW_MS) this.speedTrail.shift();
         // Caminar = moverse de costado estando de pie. Una caída o sentarse mueve la cadera hacia abajo: eso no es caminar.
         const dx = Math.abs(p.hip.x - first.x);
         const dy = Math.abs(p.hip.y - first.y);
@@ -513,6 +577,8 @@ export class ActivityTracker {
     return {
       posture: this.state || 'desconocida', walking: this.walking, events, lyingNow: p.posture === 'acostada', inBed: p.inBed,
       huboPosturaNormalAntes: this.huboPosturaNormalAntes,
+      // Pico de velocidad de la cadera en los últimos 4 segundos (0 si no hay datos).
+      peakSpeedRecent: this.speedTrail.length ? Math.max(...this.speedTrail.map((s) => s.speed)) : 0,
       zoneEnterCount: this.zoneEnterCount, zoneExitCount: this.zoneExitCount, zoneLastSide: this.zoneLastSide,
       zoneInsideNow: this.zoneInside, zoneElapsedMs: this.zoneSince !== null ? now - this.zoneSince : 0,
     };

@@ -1,11 +1,11 @@
 import { evaluateFrame, P } from './rules.js';
-import { PeopleTracker, assignHands, poseBox, filtrarPosesDuplicadas, zonePoints } from './people.js';
+import { PeopleTracker, assignHands, poseBox, filtrarPosesDuplicadas, zonePoints, evidenciaDeCuerpoReal } from './people.js';
 import { setupInstallButton } from './install.js';
 
 // Visible en pantalla (junto al nombre) para confirmar de un vistazo si el celular/PC ya
 // tiene la versión más nueva, sin tener que abrir herramientas de desarrollador. Se sube
 // junto con el VERSION de sw.js en cada cambio.
-const APP_VERSION = 'v66';
+const APP_VERSION = 'v67';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo, loadLicenciaConfig } from './licencia.js';
 import { iniciarPanelAdmin, NOMBRE_ADMIN_SECRETO } from './admin-panel.js';
@@ -642,6 +642,13 @@ const OBJ_CHECK_MS = 700;
 // (posible con muy poca luz) se deja de exigir esto, para no tapar una caída real.
 const FALL_CONFIRM_WINDOW_MS = 6000;
 const FALL_VERIFIER_GIVEUP_MS = 20000;
+// Una caída real es brusca: la cadera baja rápido (pico de velocidad alto). Acostarse a
+// propósito (a descansar, a dormir) es lento y controlado, no llega a ese pico — y esto
+// vale aunque la cama no esté marcada en pantalla (sirve para cuando no se puede marcar
+// nada en esa cámara/celular, ej. cámaras IP ajenas a la app). Unidad: "troncos por
+// segundo" (igual escala que walkSpeed, ~0.7 = caminar). Una caída ronda 1.5-3; un
+// recline lento, bastante menos de 1.
+const FALL_SPEED_MIN = 1.1;
 
 /** ¿El recuadro de esta pose cae adentro (con margen) de algún "person" confirmado
  * por el detector de objetos? Si no hay margen de superposición, no se confía en la pose. */
@@ -732,15 +739,25 @@ function processFrame({ source, w, h }) {
       && !(objSinPersonaDesde && now - objSinPersonaDesde > FALL_VERIFIER_GIVEUP_MS);
     const personaVerificadaParaCaida = !verificadorUtilizable
       || (now - (p.track.lastConfirmedPerson || 0)) <= FALL_CONFIRM_WINDOW_MS;
+    // ¿Hubo un pico de velocidad alto hace poco (brusco, como una caída real) o todo fue
+    // lento y controlado (como alguien que se acuesta a propósito)?
+    const transicionBrusca = act.peakSpeedRecent >= FALL_SPEED_MIN;
+    // ¿Se vio alguna vez hace poco una CARA creíble (ojos/nariz/orejas de verdad) o una
+    // pierna con confianza alta? Una mano sola cerca de cámara puede "completar" hombros
+    // y cadera creíbles para el modelo, pero no una cara ni una rodilla de verdad: esto
+    // la filtra aunque pase el resto de los controles.
+    if (evidenciaDeCuerpoReal(pose)) p.track.lastBodyEvidenceAt = now;
+    const cuerpoRealParaCaida = (now - (p.track.lastBodyEvidenceAt || 0)) <= FALL_CONFIRM_WINDOW_MS;
 
     // Acostada en una zona marcada como cama no es una caída. Tampoco cuenta si esta
-    // persona nunca estuvo parada o sentada antes: una caída real siempre tiene una
-    // postura normal previa, así que "nacer" ya acostado (típico de un objeto confundido
-    // con una persona) no alcanza para avisar. Tampoco cuenta si el verificador de
-    // persona nunca la confirmó hace poco (típico de un patrón decorativo "completado"
-    // como cuerpo: un ventilador, el tapizado de un respaldo, etc.).
+    // persona nunca estuvo parada o sentada antes, o si pasó a acostada de forma lenta y
+    // controlada (como alguien acostándose a propósito, aunque esa cama no esté marcada
+    // en pantalla): una caída real siempre tiene una postura normal previa Y es brusca.
+    // Tampoco cuenta si el verificador de persona nunca la confirmó hace poco, o si nunca
+    // se vio una cara/pierna creíble hace poco (típico de una mano sola, o un patrón
+    // decorativo "completado" como cuerpo: un ventilador, un respaldo, etc.).
     const lying = settings.detectFalls && act.lyingNow && !act.inBed && act.huboPosturaNormalAntes
-      && personaVerificadaParaCaida;
+      && personaVerificadaParaCaida && transicionBrusca && cuerpoRealParaCaida;
     const fallState = settings.detectFalls ? p.track.fall.update(lying, now) : 'idle';
     return { id: p.id, track: p.track, pose, hands: handsByPose[p.index], res, touchState, lying, fallState, box: poseBox(pose, w, h),
       posture: act.posture, walking: act.walking, inBed: act.lyingNow && act.inBed, events: act.events,
