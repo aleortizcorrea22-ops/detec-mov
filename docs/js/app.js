@@ -5,7 +5,7 @@ import { setupInstallButton } from './install.js';
 // Visible en pantalla (junto al nombre) para confirmar de un vistazo si el celular/PC ya
 // tiene la versión más nueva, sin tener que abrir herramientas de desarrollador. Se sube
 // junto con el VERSION de sw.js en cada cambio.
-const APP_VERSION = 'v105';
+const APP_VERSION = 'v106';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo, loadLicenciaConfig } from './licencia.js';
 import { aplicarConfigRemota, CLAVES_REMOTAS } from './config-remota.js';
@@ -808,7 +808,9 @@ const MOV_PERSONA_MS = 8000;
 let movConfirmaAt = 0;
 const MOV_RADIO_CABEZA = 4.5; // en anchos de ojos: cara + pelo + lo que está pegado a la cabeza
 const MOV_RADIO_TORSO = 5; // alrededor de los hombros
-const MOV_CARA_HOMBROS_MAX = 1.6; // distancia cara-hombros, en anchos de hombro (v104)
+// distancia cara-hombros, en anchos de hombro. v104 la puso en 1.6 y en vivo (diagnostico de v105, de espaldas con el brazo
+// arriba) la mediana real es ~2.5: descartaba 80-95 % de las muestras. v106: 3.0.
+const MOV_CARA_HOMBROS_MAX = 3.0;
 const movCanvas = document.createElement('canvas');
 const movCtx = movCanvas.getContext('2d', { willReadFrequently: true });
 let movPrev = null;
@@ -1040,9 +1042,10 @@ function processFrame({ source, w, h }) {
       res = { ...resCrudo, touching: enCama
         // En la cama el esqueleto NO sirve (amontona los puntos cerca de la cabeza aunque los brazos estén
         // abajo: daba avisos falsos "(mano derecha)"): solo cuenta el brazo moviéndose cerca de la cabeza.
-        // v103: el movimiento solo NO prueba que haya una persona (con la cama vacia un "fantasma" + un cambio de
-        // imagen daba avisos falsos): hace falta que COCO la haya confirmado en los ultimos segundos.
-        ? (movCabeza && personaFuerte)
+        // v106: vuelve a valer el movimiento como prueba de persona (v103 exigia a COCO y en vivo, de espaldas con el brazo
+        // arriba, COCO casi no la confirma: 4-39 de ~100 cuadros). La proteccion contra fantasmas es ahora la geometria
+        // (cara cerca de los hombros) dentro de movimientoCabeza.
+        ? movCabeza
         : (resCrudo.touching && cuerpoRealConfirmado && personaFuerte && brazoVinoDeAbajo && !brazoAlto) };
       touchState = p.track.touch.update(res.touching, now, enCama);
     } else {
