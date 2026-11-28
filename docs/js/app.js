@@ -5,7 +5,7 @@ import { setupInstallButton } from './install.js';
 // Visible en pantalla (junto al nombre) para confirmar de un vistazo si el celular/PC ya
 // tiene la versión más nueva, sin tener que abrir herramientas de desarrollador. Se sube
 // junto con el VERSION de sw.js en cada cambio.
-const APP_VERSION = 'v73';
+const APP_VERSION = 'v74';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo, loadLicenciaConfig } from './licencia.js';
 import { iniciarPanelAdmin, NOMBRE_ADMIN_SECRETO } from './admin-panel.js';
@@ -654,6 +654,9 @@ const FALL_SPEED_MIN = 1.1;
 // cabeza (ver manoAbajo en rules.js): así se exige ver subir el brazo de verdad, cuadro a
 // cuadro, en vez de aceptar que la mano "aparezca" ya arriba de golpe.
 const HAND_RISE_WINDOW_MS = 2500;
+// Una persona real se mantiene confirmada mucho más que esto; una alucinación de un solo
+// cuadro (desenfoque de movimiento al mover la cámara) no llega a sostenerse tanto.
+const PERSON_STABLE_MS = 400;
 
 /** ¿El recuadro de esta pose cae adentro (con margen) de algún "person" confirmado
  * por el detector de objetos? Si no hay margen de superposición, no se confía en la pose. */
@@ -738,12 +741,20 @@ function processFrame({ source, w, h }) {
       && poseConfirmadaComoPersona(pose, cachedPersonBoxes, w, h)) {
       p.track.lastConfirmedPerson = now;
     }
-    const verificadorUtilizable = objectDetector && !objectDetectorFailed
-      && !(objSinPersonaDesde && now - objSinPersonaDesde > FALL_VERIFIER_GIVEUP_MS);
-    // Si no hay verificador (falló al cargar en este equipo) o lleva mucho tiempo sin
-    // confirmar a NADIE en el cuadro, no se exige esto (mejor eso que ocultar a alguien).
-    const personaVerificada = !verificadorUtilizable
-      || (now - (p.track.lastConfirmedPerson || 0)) <= FALL_CONFIRM_WINDOW_MS;
+    // Caso real encontrado: en una habitación vacía de verdad (nadie real ahí), el
+    // verificador nunca confirma a nadie — eso es correcto, no un fallo del verificador.
+    // Si además el modelo de pose "alucina" repetidamente sobre un mueble (un sillón, un
+    // ventilador), antes la "válvula de escape" (desactivar la exigencia tras 20 s sin
+    // confirmar a NADIE) dejaba pasar esa alucinación sin ningún control. Ahora esa
+    // válvula de escape SOLO vale para un seguimiento que el verificador YA confirmó de
+    // verdad alguna vez (una persona real que el verificador dejó de ver, ej. por poca
+    // luz): nunca para uno nuevo que el verificador jamás confirmó.
+    const hayVerificador = objectDetector && !objectDetectorFailed;
+    const verificadorSinNadieHaceMucho = hayVerificador
+      && !!objSinPersonaDesde && now - objSinPersonaDesde > FALL_VERIFIER_GIVEUP_MS;
+    const personaVerificada = !hayVerificador
+      || (now - (p.track.lastConfirmedPerson || 0)) <= FALL_CONFIRM_WINDOW_MS
+      || (verificadorSinNadieHaceMucho && !!p.track.lastConfirmedPerson);
     if (evidenciaDeCuerpoReal(pose)) p.track.lastBodyEvidenceAt = now;
     const cuerpoRealConfirmado = (now - (p.track.lastBodyEvidenceAt || 0)) <= FALL_CONFIRM_WINDOW_MS;
 
@@ -793,19 +804,26 @@ function processFrame({ source, w, h }) {
     // se vio una cara/pierna creíble hace poco (típico de una mano sola, o un patrón
     // decorativo "completado" como cuerpo: un ventilador, un respaldo, etc.).
     const lying = settings.detectFalls && act.lyingNow && !act.inBed && act.huboPosturaNormalAntes
-      && personaVerificadaParaCaida && transicionBrusca && cuerpoRealParaCaida;
+      && personaVerificada && transicionBrusca && cuerpoRealConfirmado;
     const fallState = settings.detectFalls ? p.track.fall.update(lying, now) : 'idle';
     // Todas las alertas de ESTA persona (toque, caída, y cada actividad: se sentó, se
     // levantó, caminó, zona, pidió ayuda) exigen lo mismo: primero confirmar que es una
     // persona de verdad (verificador + evidencia de cuerpo), y recién ahí avisar lo que
     // hizo. Sin esa confirmación reciente, no se informa ningún evento de actividad
     // (aunque la postura cruda haya cambiado), para no avisar de un objeto cualquiera.
-    const personaConfirmada = personaVerificada && cuerpoRealConfirmado;
+    const personaConfirmadaAhora = personaVerificada && cuerpoRealConfirmado;
+    // ESTABILIDAD: no alcanza con confirmarse en UN cuadro suelto — con la cámara en
+    // movimiento (al mover el celular de un lado a otro), el modelo puede "alucinar" algo
+    // así por una fracción de segundo (desenfoque de movimiento) y desaparece enseguida.
+    // Se exige mantenerse confirmada un ratito (PERSON_STABLE_MS) antes de dibujarse en
+    // pantalla o avisar nada — una persona real se mantiene mucho más que eso.
+    if (personaConfirmadaAhora) { if (!p.track.estableDesde) p.track.estableDesde = now; } else { p.track.estableDesde = null; }
+    const personaConfirmada = p.track.estableDesde !== null && (now - p.track.estableDesde) >= PERSON_STABLE_MS;
     const eventosConfirmados = personaConfirmada ? act.events : [];
     return { id: p.id, track: p.track, pose, hands: handsByPose[p.index], res, touchState, lying, fallState, box: poseBox(pose, w, h),
       personaConfirmada, posture: act.posture, walking: act.walking, inBed: act.lyingNow && act.inBed, events: eventosConfirmados,
       zoneEnterCount: act.zoneEnterCount, zoneExitCount: act.zoneExitCount, zoneLastSide: act.zoneLastSide, zoneElapsedS: Math.round(act.zoneElapsedMs / 1000) };
-  });
+  }).filter((p) => p.personaConfirmada); // sin confirmación estable, ni se dibuja ni se avisa nada: es como si no estuviera
 
   drawAll(w, h, list);
 

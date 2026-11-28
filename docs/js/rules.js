@@ -4,7 +4,7 @@
 
 // Índices de MediaPipe Pose (33 puntos)
 export const P = {
-  NOSE: 0, L_EYE: 2, R_EYE: 5, L_EAR: 7, R_EAR: 8,
+  NOSE: 0, L_EYE: 2, R_EYE: 5, L_EAR: 7, R_EAR: 8, MOUTH_L: 9, MOUTH_R: 10,
   L_SHOULDER: 11, R_SHOULDER: 12, L_ELBOW: 13, R_ELBOW: 14,
   L_WRIST: 15, R_WRIST: 16, L_PINKY: 17, R_PINKY: 18,
   L_INDEX: 19, R_INDEX: 20, L_THUMB: 21, R_THUMB: 22,
