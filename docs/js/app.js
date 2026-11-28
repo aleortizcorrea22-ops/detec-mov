@@ -5,7 +5,7 @@ import { setupInstallButton } from './install.js';
 // Visible en pantalla (junto al nombre) para confirmar de un vistazo si el celular/PC ya
 // tiene la versión más nueva, sin tener que abrir herramientas de desarrollador. Se sube
 // junto con el VERSION de sw.js en cada cambio.
-const APP_VERSION = 'v106';
+const APP_VERSION = 'v107';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo, loadLicenciaConfig } from './licencia.js';
 import { aplicarConfigRemota, CLAVES_REMOTAS } from './config-remota.js';
@@ -811,6 +811,11 @@ const MOV_RADIO_TORSO = 5; // alrededor de los hombros
 // distancia cara-hombros, en anchos de hombro. v104 la puso en 1.6 y en vivo (diagnostico de v105, de espaldas con el brazo
 // arriba) la mediana real es ~2.5: descartaba 80-95 % de las muestras. v106: 3.0.
 const MOV_CARA_HOMBROS_MAX = 3.0;
+// Filtros por muestra del toque de cabeza en la cama. v107: con poca luz el ruido de la camara hace que "afuera" cambie
+// ~0.05 de un cuadro a otro (con luz de dia 0.003-0.02): el tope fijo de 0.04 descartaba casi todo a la tarde/noche
+// (diagnostico en vivo 17:45-17:47: 1 muestra buena de 82-101). Ahora el tope fijo solo corta cambios fuertes de toda la
+// imagen (0.15: prender la luz) y la cabeza tiene que moverse al menos el doble que el resto (relativo al ruido).
+const MOV_PARAMS = { torsoMax: 1.3, fueraMax: 0.15, concentrado: 2 };
 const movCanvas = document.createElement('canvas');
 const movCtx = movCanvas.getContext('2d', { willReadFrequently: true });
 let movPrev = null;
@@ -880,14 +885,14 @@ function movimientoCabeza(pose, now) {
           movHist.push({ t: now, s: cabeza, f: fuera, tor: torso });
           diag.cara++; diag.muestras++;
           diagPush(diag.cabV, cabeza); diagPush(diag.torV, torso); diagPush(diag.fueV, fuera);
-          if (cabeza >= 0.015 && cabeza >= 3 * Math.max(fuera, 0.003) && fuera <= 0.04 && torso <= 1.3 * cabeza) diag.buenas++;
+          if (cabeza >= 0.015 && cabeza >= MOV_PARAMS.concentrado * Math.max(fuera, 0.003) && fuera <= MOV_PARAMS.fueraMax && torso <= MOV_PARAMS.torsoMax * cabeza) diag.buenas++;
         }
       }
     }
   }
   // v104: con los brazos levantados el torso y los costados tambien se mueven (medido: torso ~ igual que la cabeza):
   // el limite de torso (0.6) descartaba casi todos los toques reales (detectaba 0-39 % del tiempo; con 1.3 y 0.04 sube a 21-77 %).
-  return movimientoSostenido(movHist, now, { torsoMax: 1.3, fueraMax: 0.04 });
+  return movimientoSostenido(movHist, now, MOV_PARAMS);
 }
 
 function processFrame({ source, w, h }) {
