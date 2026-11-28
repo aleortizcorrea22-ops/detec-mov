@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { evaluateFrame, TouchTracker, P } from '../docs/js/rules.js';
+import { evaluateFrame, TouchTracker, P, manoAbajo } from '../docs/js/rules.js';
 
 const W = 1280;
 const H = 720;
@@ -26,7 +26,7 @@ for (const scale of [1, 0.5, 0.2]) {
   test(`mano en la parte de arriba de la cabeza → detecta (escala ${scale})`, () => {
     const r = evaluateFrame(person({ scale, hand: [30, -40] }), [], W, H);
     assert.equal(r.touching, true);
-    assert.equal(r.side, 'izquierda');
+    assert.equal(r.side, 'izquierda'); // R_ de MediaPipe = mano izquierda real (ver rules.js)
   });
 
   test(`mano al costado de la cabeza (rascando sobre la oreja) → detecta (escala ${scale})`, () => {
@@ -61,6 +61,62 @@ for (const scale of [1, 0.5, 0.2]) {
 
 test('sin persona → no detecta', () => {
   assert.equal(evaluateFrame(null, [], W, H).touching, false);
+});
+
+test('solo una mano suelta (sin hombros ni orejas ni cuerpo) → no detecta, aunque el modelo adivine 2-3 puntos de cara sueltos', () => {
+  // Simula lo que puede pasar si solo hay una mano cerca de cámara: el modelo de pose
+  // "adivina" con baja confianza algunos puntos (incluida la cara), pero no hay ninguna
+  // evidencia real de hombros ni orejas. No tiene que contar como una persona.
+  const lm = Array.from({ length: 33 }, () => ({ x: 0, y: 0, visibility: 0.1 }));
+  // Puntos de la mano/brazo, bien vistos (como si realmente hubiera una mano a la vista).
+  lm[P.R_WRIST] = { x: 640 / W, y: 300 / H, visibility: 0.95 };
+  lm[P.R_INDEX] = { x: 645 / W, y: 280 / H, visibility: 0.95 };
+  lm[P.R_PINKY] = { x: 650 / W, y: 285 / H, visibility: 0.9 };
+  lm[P.R_THUMB] = { x: 630 / W, y: 285 / H, visibility: 0.9 };
+  lm[P.R_ELBOW] = { x: 660 / W, y: 200 / H, visibility: 0.8 };
+  // Un par de puntos de cara "adivinados" con confianza media (antes alcanzaba, ahora no).
+  lm[P.NOSE] = { x: 620 / W, y: 150 / H, visibility: 0.5 };
+  lm[P.L_EYE] = { x: 610 / W, y: 145 / H, visibility: 0.48 };
+  // La mano del modelo de manos, cerca de esos puntos de cara adivinados.
+  const hand = Array.from({ length: 21 }, () => ({ x: 618 / W, y: 148 / H }));
+  const r = evaluateFrame(lm, [hand], W, H);
+  assert.equal(r.touching, false);
+  assert.equal(r.zone, null);
+});
+
+test('headZone exige hombros u orejas: dos ojos solos (sin más estructura) no alcanzan', () => {
+  const lm = Array.from({ length: 33 }, () => ({ x: 0, y: 0, visibility: 0.1 }));
+  lm[P.NOSE] = { x: 620 / W, y: 150 / H, visibility: 0.9 };
+  lm[P.L_EYE] = { x: 610 / W, y: 145 / H, visibility: 0.9 };
+  lm[P.R_EYE] = { x: 630 / W, y: 145 / H, visibility: 0.9 };
+  const r = evaluateFrame(lm, [], W, H);
+  assert.equal(r.zone, null);
+});
+
+test('manoAbajo: LAS DOS manos arriba (ninguna por el cuerpo) → NO cuenta como "abajo"', () => {
+  // person() siempre deja la mano izquierda "de fábrica" abajo (dy=330); para probar de
+  // verdad que ninguna mano está abajo, hay que subir también esa.
+  const p = person({ hand: [30, -40] }); // mano derecha arriba de la cabeza
+  p[P.L_WRIST] = { ...p[P.L_WRIST], y: (200 - 40) / H }; // mano izquierda también arriba
+  p[P.L_INDEX] = { ...p[P.L_INDEX], y: (200 - 60) / H };
+  p[P.L_PINKY] = { ...p[P.L_PINKY], y: (200 - 60) / H };
+  p[P.L_THUMB] = { ...p[P.L_THUMB], y: (200 - 60) / H };
+  assert.equal(manoAbajo(p, [], W, H), false);
+});
+
+test('manoAbajo: al menos una mano abajo (al costado del cuerpo) → sí cuenta como "abajo"', () => {
+  assert.equal(manoAbajo(person({ hand: [110, 330] }), [], W, H), true); // el valor por defecto de person(): mano abajo
+});
+
+test('headZone rechaza una cara pegada a hombros de OTRA persona (dos personas cerca, poca luz): no confía en esa cabeza', () => {
+  const lm = Array.from({ length: 33 }, () => ({ x: 0, y: 0, visibility: 0.1 }));
+  const set = (i, x, y) => { lm[i] = { x: x / W, y: y / H, visibility: 0.9 }; };
+  // Hombros de la "persona A" (ancho de hombros = 160px).
+  set(P.L_SHOULDER, 300, 300); set(P.R_SHOULDER, 460, 300);
+  // Cara de la "persona B", lejos: a más de 3x el ancho de hombros de distancia.
+  set(P.NOSE, 900, 150); set(P.L_EYE, 880, 145); set(P.R_EYE, 920, 145);
+  const r = evaluateFrame(lm, [], W, H);
+  assert.equal(r.zone, null);
 });
 
 test('dedos detectados por el modelo de manos cuentan aunque la pose no vea la muñeca', () => {
