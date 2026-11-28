@@ -5,10 +5,10 @@ import { setupInstallButton } from './install.js';
 // Visible en pantalla (junto al nombre) para confirmar de un vistazo si el celular/PC ya
 // tiene la versión más nueva, sin tener que abrir herramientas de desarrollador. Se sube
 // junto con el VERSION de sw.js en cada cambio.
-const APP_VERSION = 'v93';
+const APP_VERSION = 'v94';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo, loadLicenciaConfig } from './licencia.js';
-import { aplicarConfigRemota } from './config-remota.js';
+import { aplicarConfigRemota, CLAVES_REMOTAS } from './config-remota.js';
 import { iniciarPanelAdmin, NOMBRE_ADMIN_SECRETO } from './admin-panel.js';
 
 // Servidores para que el video en vivo cruce redes difíciles (NAT estricto, datos
@@ -1767,6 +1767,24 @@ async function revisarConfigRemota() {
 }
 setTimeout(revisarConfigRemota, 5000);
 setInterval(revisarConfigRemota, 60 * 1000);
+
+// El celular también le cuenta al servidor qué versión tiene y qué tildes tiene activos, así se puede
+// ver desde la administración sin tener el celular en la mano (GET /api/estado/<chat_id>).
+async function informarEstado() {
+  try {
+    const { baseUrl, id } = loadLicenciaConfig();
+    if (!id) return;
+    const s = {};
+    for (const k of CLAVES_REMOTAS) if (typeof settings[k] === 'boolean') s[k] = settings[k];
+    await fetch(`${baseUrl}/api/estado/${encodeURIComponent(id)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ n: deviceName(), v: APP_VERSION, rev: settings.remoteRev || 0, s }),
+    });
+  } catch { /* sin red o servidor sin esta función: se reintenta en un minuto */ }
+}
+setTimeout(informarEstado, 8000);
+setInterval(informarEstado, 60 * 1000);
 
 // ---------------------------------------------------------------------------
 // Compartir la aplicación (para instalarla en el celular de una familia nueva)
