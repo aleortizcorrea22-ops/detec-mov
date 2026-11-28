@@ -1,11 +1,11 @@
 import { evaluateFrame, P, manoAbajo } from './rules.js';
-import { PeopleTracker, assignHands, poseBox, filtrarPosesDuplicadas, zonePoints, evidenciaDeCuerpoReal } from './people.js';
+import { PeopleTracker, assignHands, poseBox, filtrarPosesDuplicadas, zonePoints, evidenciaDeCuerpoReal, brazoLevantado } from './people.js';
 import { setupInstallButton } from './install.js';
 
 // Visible en pantalla (junto al nombre) para confirmar de un vistazo si el celular/PC ya
 // tiene la versión más nueva, sin tener que abrir herramientas de desarrollador. Se sube
 // junto con el VERSION de sw.js en cada cambio.
-const APP_VERSION = 'v85';
+const APP_VERSION = 'v86';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo, loadLicenciaConfig } from './licencia.js';
 import { iniciarPanelAdmin, NOMBRE_ADMIN_SECRETO } from './admin-panel.js';
@@ -779,6 +779,9 @@ function processFrame({ source, w, h }) {
     // Toque de cabeza: casilla que se puede apagar (activada por defecto, es la detección
     // original del proyecto). Si está apagada, directamente no se analiza nada de esto
     // (no solo "no se avisa"), para no gastar de más en el celular.
+    // Tocarse la cabeza y levantar el brazo NO se mezclan: con la mano claramente más arriba
+    // que la cabeza no hay toque, y mientras hay un toque confirmado no se avisa brazo arriba.
+    const brazoAlto = settings.alertPideAyuda && brazoLevantado(pose, w, h, handsByPose[p.index]);
     let res;
     let touchState = 'idle';
     if (settings.alertCabeza) {
@@ -800,7 +803,7 @@ function processFrame({ source, w, h }) {
       // `res.touching` es lo que se usa en todos lados (overlay, estado, alerta): ya
       // incluye estos gates, para no mostrar "CABEZA" en pantalla por algo que de todas
       // formas no iba a avisar.
-      res = { ...resCrudo, touching: resCrudo.touching && cuerpoRealConfirmado && personaFuerte && brazoVinoDeAbajo };
+      res = { ...resCrudo, touching: resCrudo.touching && cuerpoRealConfirmado && personaFuerte && brazoVinoDeAbajo && !brazoAlto };
       touchState = p.track.touch.update(res.touching, now);
     } else {
       res = { touching: false, zone: null, closest: null, via: null, side: null };
@@ -809,6 +812,7 @@ function processFrame({ source, w, h }) {
     const act = p.track.act.update(pose, w, h, now, {
       bedZones: settings.bedZones,
       detectarBrazoArriba: settings.alertPideAyuda,
+      manos: handsByPose[p.index],
       watchZones: watchAny ? settings.watchZones : [],
       watchEnter: settings.watchZoneEnter, watchExit: settings.watchZoneExit,
       watchInsideMs: settings.watchZoneInside ? settings.watchDwellInS * UNIT_MS[settings.watchDwellInUnit] : null,
@@ -842,9 +846,9 @@ function processFrame({ source, w, h }) {
     // pantalla o avisar nada — una persona real se mantiene mucho más que eso.
     if (personaConfirmadaAhora) { if (!p.track.estableDesde) p.track.estableDesde = now; } else { p.track.estableDesde = null; }
     const personaConfirmada = personaVerificada && p.track.estableDesde !== null && (now - p.track.estableDesde) >= PERSON_STABLE_MS;
-    const eventosConfirmados = personaConfirmada && personaFuerte ? act.events : [];
+    const eventosConfirmados = personaConfirmada && personaFuerte ? act.events.filter((e) => e !== 'pide_ayuda' || !res.touching) : [];
     return { id: p.id, track: p.track, pose, hands: handsByPose[p.index], res, touchState, lying, fallState, box: poseBox(pose, w, h),
-      personaConfirmada, posture: act.posture, walking: act.walking, inBed: act.lyingNow && act.inBed, events: eventosConfirmados,
+      personaConfirmada, brazoArriba: act.brazoAhora, posture: act.posture, walking: act.walking, inBed: act.lyingNow && act.inBed, events: eventosConfirmados,
       zoneEnterCount: act.zoneEnterCount, zoneExitCount: act.zoneExitCount, zoneLastSide: act.zoneLastSide, zoneElapsedS: Math.round(act.zoneElapsedMs / 1000) };
   }).filter((p) => p.personaConfirmada); // sin confirmación estable, ni se dibuja ni se avisa nada: es como si no estuviera
 
@@ -866,7 +870,7 @@ function processFrame({ source, w, h }) {
   } else if (touching.length) {
     setStatus('alert', `${touching.map((p) => `Persona ${p.id}`).join(', ')}: mano en la cabeza · ${cuantas}`);
   } else {
-    setStatus('ok', `Vigilando · ${cuantas} · COCO ${cocoUltimoPuntaje.toFixed(2)}`);
+    setStatus('ok', `Vigilando · ${cuantas} · COCO ${cocoUltimoPuntaje.toFixed(2)}${settings.alertPideAyuda ? ` · brazo ${list.some((p) => p.brazoArriba) ? 'ARRIBA' : 'abajo'}` : ''}`);
   }
 
   frames++;

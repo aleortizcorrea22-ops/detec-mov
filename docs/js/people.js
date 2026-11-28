@@ -350,42 +350,75 @@ export function ladoDeZona(pt, zone) {
   return Object.entries(d).sort((a, b) => b[1] - a[1])[0][0];
 }
 
-/** ¿Tiene uno de los dos brazos bien levantado (como pidiendo algo o llamando)?
- * Exige el brazo ESTIRADO hacia arriba (hombro, codo y muñeca alineados hacia arriba,
- * no solo la mano cerca del hombro), con una distancia mínima que se ajusta sola según
- * el tamaño de la persona en la imagen (no importa si está cerca o lejos de cámara). */
-export function brazoLevantado(pose, w, h) {
-  const lado = (shIdx, elIdx, wrIdx) => {
-    const sh = pose[shIdx], el = pose[elIdx], wr = pose[wrIdx];
-    if (!vis(sh) || !vis(wr)) return false;
-    const shP = px(sh, w, h);
-    const wrP = px(wr, w, h);
-    const otroHombro = pose[shIdx === P.L_SHOULDER ? P.R_SHOULDER : P.L_SHOULDER];
-    // Escala de referencia: preferí el ancho de hombros si se ven los dos; si no (de
-    // costado, encuadre cerrado), usá el recuadro de la persona como respaldo, así no
-    // se pierde la detección solo porque no entró el otro hombro en cámara.
-    let escala = vis(otroHombro) ? dist(shP, px(otroHombro, w, h)) : null;
+/** ¿Tiene un brazo levantado MÁS ARRIBA QUE LA CABEZA (como pidiendo algo o llamando)?
+ * Tres formas de verlo, de la más a la menos directa:
+ *  1. la muñeca se ve y queda por encima de la cabeza (con el codo en el medio, si se ve);
+ *  2. la muñeca queda cortada fuera del cuadro (pasa mucho al levantar la mano bien alto con
+ *     el celular cerca) pero el codo se ve por encima de los ojos (el antebrazo sigue hacia arriba);
+ *  3. el detector de manos ve una mano por encima de la cabeza, cerca de esta persona.
+ * Todas las distancias se miden en "anchos de hombros", así no importa si está cerca o lejos.
+ * @param {Array<Array<{x:number,y:number}>>} manos manos (landmarks 0..1) asignadas a esta persona */
+export function brazoLevantado(pose, w, h, manos = []) {
+  const caraYs = [P.NOSE, P.L_EYE, P.R_EYE].map((i) => pose[i]).filter(vis).map((l) => px(l, w, h).y);
+  const escalaDe = (shIdx) => {
+    const sh = pose[shIdx];
+    const otro = pose[shIdx === P.L_SHOULDER ? P.R_SHOULDER : P.L_SHOULDER];
+    // Preferí el ancho de hombros si se ven los dos; si no (de costado, encuadre cerrado),
+    // el recuadro de la persona como respaldo.
+    let escala = vis(sh) && vis(otro) ? dist(px(sh, w, h), px(otro, w, h)) : null;
     if (!escala) {
       const box = poseBox(pose, w, h);
       escala = box ? box.h * 0.3 : null;
     }
-    if (!escala || escala < 2) return false;
-    // Mano bien por encima del hombro (no solo un poco, para no confundir con un gesto chico).
-    if ((shP.y - wrP.y) <= 0.5 * escala) return false;
-    // Si se ve el codo, tiene que estar en el medio (entre el hombro y la muñeca, en
-    // altura): así se confirma un brazo de verdad estirado hacia arriba, no una muñeca
-    // "adivinada" en cualquier lado sin un codo real que la conecte con el hombro. Si no
-    // se ve el codo, no se puede confirmar esto, pero tampoco se penaliza (igual que el
-    // resto del código: sin evidencia, no se arriesga, pero tampoco se castiga lo que no
-    // se puede ver).
-    if (vis(el)) {
-      const elP = px(el, w, h);
-      const margen = 0.35 * escala;
-      if (elP.y < wrP.y - margen || elP.y > shP.y + margen) return false;
-    }
-    return true;
+    return escala;
   };
-  return lado(P.L_SHOULDER, P.L_ELBOW, P.L_WRIST) || lado(P.R_SHOULDER, P.R_ELBOW, P.R_WRIST);
+  // Línea que la mano tiene que pasar: 0.8 anchos de hombro por encima de los ojos, o sea
+  // CLARAMENTE más arriba que la cabeza (la coronilla queda ~0.4 arriba de los ojos). Así
+  // no se mezcla con tocarse la cabeza. Sin cara visible, bien arriba del hombro.
+  const ojosDe = (shP, escala) => (caraYs.length ? Math.min(...caraYs) : shP.y - 1.0 * escala);
+  const techoDe = (shP, escala) => ojosDe(shP, escala) - 0.8 * escala;
+
+  const lado = (shIdx, elIdx, wrIdx) => {
+    const sh = pose[shIdx], el = pose[elIdx], wr = pose[wrIdx];
+    if (!vis(sh)) return false;
+    const shP = px(sh, w, h);
+    const escala = escalaDe(shIdx);
+    if (!escala || escala < 2) return false;
+    const techo = techoDe(shP, escala);
+    if (vis(wr)) {
+      const wrP = px(wr, w, h);
+      if (wrP.y >= techo) return false;
+      // Si se ve el codo, tiene que estar entre el hombro y la muñeca (en altura): así se
+      // confirma un brazo de verdad estirado, no una muñeca "adivinada" sin codo real.
+      if (vis(el)) {
+        const elP = px(el, w, h);
+        const margen = 0.35 * escala;
+        if (elP.y < wrP.y - margen || elP.y > shP.y + margen) return false;
+      }
+      return true;
+    }
+    // Muñeca fuera de cuadro o sin confianza: el codo por encima de los ojos alcanza.
+    if (vis(el)) return px(el, w, h).y < ojosDe(shP, escala);
+    return false;
+  };
+  if (lado(P.L_SHOULDER, P.L_ELBOW, P.L_WRIST) || lado(P.R_SHOULDER, P.R_ELBOW, P.R_WRIST)) return true;
+
+  // 3) manos vistas por el detector de manos, por encima de la cabeza y cerca de la persona.
+  const hombros = [P.L_SHOULDER, P.R_SHOULDER].filter((i) => vis(pose[i]));
+  if (manos.length && hombros.length) {
+    const shPs = hombros.map((i) => px(pose[i], w, h));
+    const cx = shPs.reduce((a, p) => a + p.x, 0) / shPs.length;
+    const sy = shPs.reduce((a, p) => a + p.y, 0) / shPs.length;
+    const escala = escalaDe(hombros[0]);
+    if (escala && escala >= 2) {
+      const techo = techoDe({ x: cx, y: sy }, escala);
+      for (const mano of manos) {
+        const pts = [mano[0], mano[9]].filter(Boolean).map((l) => px(l, w, h));
+        if (pts.length && pts.every((p) => p.y < techo) && pts.some((p) => Math.abs(p.x - cx) < 2.5 * escala)) return true;
+      }
+    }
+  }
+  return false;
 }
 
 /**
@@ -514,7 +547,7 @@ export class ActivityTracker {
 
   /** @returns {{posture:string, walking:boolean, events:string[], lyingNow:boolean, inBed:boolean, huboPosturaNormalAntes:boolean}} */
   update(pose, w, h, now, {
-    bedZones = [], detectarBrazoArriba = false, watchZones = [],
+    bedZones = [], detectarBrazoArriba = false, manos = [], watchZones = [],
     watchEnter = false, watchExit = false, watchInsideMs = null, watchOutsideMs = null,
   } = {}) {
     const events = [];
@@ -553,7 +586,7 @@ export class ActivityTracker {
 
     // --- brazo levantado (pidiendo algo / llamando) ---
     if (detectarBrazoArriba) {
-      const arriba = brazoLevantado(pose, w, h);
+      const arriba = brazoLevantado(pose, w, h, manos);
       const bs = arriba ? 'arriba' : 'abajo';
       if (bs !== this.brazoCand) { this.brazoCand = bs; this.brazoCandSince = now; }
       if (bs !== this.brazoState && now - this.brazoCandSince >= this.brazoStableMs) {
@@ -625,6 +658,7 @@ export class ActivityTracker {
     }
     return {
       posture: this.state || 'desconocida', walking: this.walking, events, lyingNow: p.posture === 'acostada', inBed: p.inBed,
+      brazoAhora: this.brazoCand === 'arriba',
       huboPosturaNormalAntes: this.huboPosturaNormalAntes,
       // Pico de velocidad de la cadera en los últimos 4 segundos (0 si no hay datos).
       peakSpeedRecent: this.speedTrail.length ? Math.max(...this.speedTrail.map((s) => s.speed)) : 0,
