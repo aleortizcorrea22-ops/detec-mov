@@ -1549,6 +1549,25 @@ $('shutdownBtn').addEventListener('click', async () => {
   }
 });
 
+// Reanudar solo, con la ÚLTIMA configuración guardada: si este equipo ya se usó antes
+// (tocó Iniciar alguna vez), cada vez que se abre o se recarga la página (por ejemplo,
+// tras la actualización automática de más abajo) se prende la cámara y arranca a vigilar
+// sola, sin que nadie la toque — las opciones (cama marcada, zona, qué alertas están
+// activas, etc.) ya quedaron guardadas en este celular de la vez anterior. Si alguien
+// toca "Detener" a propósito, no se vuelve a prender sola hasta la próxima vez que abra
+// la página (para poder apagarla de verdad cuando haga falta).
+if (settings.deviceNameAsked) {
+  let detenidoPorUsuario = false;
+  els.stopBtn.addEventListener('click', (e) => { if (e.isTrusted) detenidoPorUsuario = true; });
+  els.startBtn.addEventListener('click', (e) => { if (e.isTrusted) detenidoPorUsuario = false; });
+  const autoStart = () => {
+    if (detenidoPorUsuario || running || els.startBtn.disabled) return;
+    els.startBtn.click();
+  };
+  setTimeout(autoStart, 1500);
+  setInterval(autoStart, 15000); // reintenta solo si falló (ej. la cámara tardó en estar lista)
+}
+
 // Actualización automática: un celular de vigía puede quedar con la pantalla prendida
 // DÍAS sin que nadie lo toque, y el navegador por sí solo a veces tarda mucho (o nunca)
 // en darse cuenta de que hay una versión nueva, porque nunca vuelve a "navegar" a la
