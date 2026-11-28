@@ -5,7 +5,7 @@ import { setupInstallButton } from './install.js';
 // Visible en pantalla (junto al nombre) para confirmar de un vistazo si el celular/PC ya
 // tiene la versión más nueva, sin tener que abrir herramientas de desarrollador. Se sube
 // junto con el VERSION de sw.js en cada cambio.
-const APP_VERSION = 'v84';
+const APP_VERSION = 'v85';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo, loadLicenciaConfig } from './licencia.js';
 import { iniciarPanelAdmin, NOMBRE_ADMIN_SECRETO } from './admin-panel.js';
@@ -312,13 +312,14 @@ async function loadModels() {
   }
   if (!objectDetector && !objectDetectorFailed) {
     try {
-      objectDetector = await createWithFallback(mp.ObjectDetector, {
-        baseOptions: { modelAssetPath: modelUrl('object') },
-        runningMode: 'VIDEO',
-        // Medido en el navegador: persona real ~0.57, fantasmas (escritorio, silla, monitor)
-        // como máximo 0.08. 0.2 da margen para personas chicas/sentadas/con poca luz.
-        scoreThreshold: 0.3,
-        maxResults: 8,
+      // CPU a propósito: el modelo int8 con el delegado GPU da resultados malos en algunos
+      // celulares Android, y todas las mediciones buenas se hicieron en CPU. Corre sobre
+      // recortes chicos, así que el costo es bajo. Modo IMAGE: cada recorte es independiente.
+      objectDetector = await mp.ObjectDetector.createFromOptions(vision, {
+        baseOptions: { modelAssetPath: modelUrl('object'), delegate: 'CPU' },
+        runningMode: 'IMAGE',
+        scoreThreshold: 0.05,
+        maxResults: 5,
         categoryAllowlist: ['person'],
       });
     } catch (e) {
@@ -626,14 +627,9 @@ function loop() {
   }
 }
 
-// Última vez que corrió el detector de objetos y qué encontró, para no correrlo en
-// cada cuadro (es más pesado) sin perder precisión: alcanza con confirmar cada
-// pocos cientos de ms, mucho más rápido que lo que tarda en dispararse cualquier alerta.
-let lastObjCheck = 0;
-let cachedPersonBoxes = null;
-let objSinPersonaDesde = 0;
+// Última vez que ALGÚN seguimiento fue confirmado como persona por el verificador (COCO).
+let lastAnyConfirmAt = 0;
 let lastDiagLog = 0;
-const OBJ_CHECK_MS = 700;
 // Una CAÍDA es la alerta más grave y la más cara de tener falsa (asusta a la familia).
 // Patrones decorativos repetitivos (ventilador de techo, botones de un respaldo
 // tapizado, una reja) a veces se "completan" como un cuerpo entero por el modelo de
@@ -659,26 +655,43 @@ const HAND_RISE_WINDOW_MS = 2500;
 // Una persona real se mantiene confirmada mucho más que esto; una alucinación de un solo
 // cuadro (desenfoque de movimiento al mover la cámara) no llega a sostenerse tanto.
 const PERSON_STABLE_MS = 400;
-// Mientras ningún seguimiento esté confirmado, COCO corre más seguido.
-const OBJ_CHECK_FAST_MS = 300;
+// VERIFICACIÓN POR RECORTE. El detector COCO no mira el cuadro entero sino el recorte
+// (ampliado) alrededor de cada esqueleto: así reconoce bien a una persona chica o lejana, y
+// un esqueleto inventado sobre cables/escritorio/monitor da puntajes bajísimos. Medido sobre
+// fotos reales (modelo en CPU): persona real 0.74-0.91; 11 fantasmas 0.00-0.20; un antebrazo
+// suelto 0.43. Se confirma desde 0.5 (2 veces seguidas) y para AVISAR algo se exige 0.6.
+// La anatomía (proporción cara/hombros, visibilidad) NO sirve para separar: los fantasmas la
+// tienen perfecta — se midió.
+const COCO_SCORE_MIN = 0.5;
+const COCO_SCORE_ALERTA = 0.6;
+const COCO_CHECK_FAST_MS = 250; // seguimiento todavía sin confirmar
+const COCO_CHECK_SLOW_MS = 1000; // seguimiento ya confirmado
+const COCO_CROP_MAX = 400; // lado máximo del recorte: el modelo lo achica a 320 igual
+const cropCanvas = document.createElement('canvas');
+const cropCtx = cropCanvas.getContext('2d');
+let cocoUltimoPuntaje = 0; // se muestra en la barra de estado para poder diagnosticar en el celular
 
-/** ¿El recuadro de esta pose cae adentro (con margen) de algún "person" confirmado
- * por el detector de objetos? Si no hay margen de superposición, no se confía en la pose. */
-function poseConfirmadaComoPersona(pose, personBoxes, w, h) {
-  const box = poseBox(pose, w, h);
-  if (!box) return 0;
+/** Mejor puntaje de "persona" que COCO le da al recorte alrededor de este esqueleto. */
+function puntajePersonaEnRecorte(source, pose, w, h) {
+  let x0 = 1; let y0 = 1; let x1 = 0; let y1 = 0;
+  for (const p of pose) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
+  const padX = Math.max((x1 - x0) * 0.35, 8 / w);
+  const padY = Math.max((y1 - y0) * 0.35, 8 / h);
+  const sx = Math.max(0, x0 - padX) * w;
+  const sy = Math.max(0, y0 - padY) * h;
+  const sw = Math.min(1, x1 + padX) * w - sx;
+  const sh = Math.min(1, y1 + padY) * h - sy;
+  if (sw < 8 || sh < 8) return 0;
+  const k = Math.min(1, COCO_CROP_MAX / Math.max(sw, sh));
+  cropCanvas.width = Math.max(8, Math.round(sw * k));
+  cropCanvas.height = Math.max(8, Math.round(sh * k));
+  cropCtx.drawImage(source, sx, sy, sw, sh, 0, 0, cropCanvas.width, cropCanvas.height);
   let mejor = 0;
-  for (const pb of personBoxes) {
-    if (box.cx >= pb.originX - pb.width * 0.2 && box.cx <= pb.originX + pb.width * 1.2 &&
-      box.cy >= pb.originY - pb.height * 0.2 && box.cy <= pb.originY + pb.height * 1.2) mejor = Math.max(mejor, pb.score);
+  for (const d of objectDetector.detect(cropCanvas).detections || []) {
+    if (d.categories?.[0]?.categoryName === 'person') mejor = Math.max(mejor, d.categories[0].score);
   }
   return mejor;
 }
-// Medido sobre fotos reales: persona real 0.57-0.91; fantasmas sobre escritorio/cables
-// borrosos, hasta ~0.28 en algún cuadro suelto. Por eso: umbral 0.3 para confirmar, 2
-// confirmaciones seguidas (un cuadro borroso no alcanza) y, para AVISAR algo, puntaje >= 0.45.
-const COCO_SCORE_ALERTA = 0.45;
-let objCheckSeq = 0;
 
 function processFrame({ source, w, h }) {
   let ts = performance.now();
@@ -695,38 +708,6 @@ function processFrame({ source, w, h }) {
   // detectar a una persona real. La protección de verdad (con 6 s de memoria) sigue más
   // abajo, por seguimiento: `cuerpoRealConfirmado`.)
 
-  // Verificación extra con un detector de objetos tipo COCO (misma familia que YOLO):
-  // sabe distinguir "persona" de taza, mouse, teclado, lata, silla, etc., algo que el
-  // modelo de pose no sabe hacer (solo dibuja un esqueleto, y a veces "completa" uno
-  // creíble a partir de cualquier cosa). Sin esto confirmado, la pose no cuenta.
-  if (objectDetector && poses.length && !objectDetectorFailed) {
-    if (ts - lastObjCheck >= (cachedPersonBoxes?.length ? OBJ_CHECK_MS : OBJ_CHECK_FAST_MS)) {
-      lastObjCheck = ts;
-      try {
-        const objRes = objectDetector.detectForVideo(source, ts);
-        cachedPersonBoxes = (objRes.detections || [])
-          .filter((d) => d.categories?.[0]?.categoryName === 'person')
-          .map((d) => ({ ...d.boundingBox, score: d.categories[0].score }));
-        objCheckSeq++;
-        if (cachedPersonBoxes.length) objSinPersonaDesde = 0;
-        else objSinPersonaDesde ||= ts;
-      } catch (e) {
-        // Si el verificador falla en este equipo (celular/GPU/WASM), no debe tumbar
-        // toda la detección: se desactiva solo y se vuelve al comportamiento anterior.
-        console.warn('Verificador de persona falló, se desactiva en este equipo:', e);
-        objectDetectorFailed = true;
-        cachedPersonBoxes = null;
-      }
-    }
-    // (Acá hubo un filtro que sacaba directamente de `poses` — antes de seguir a nadie —
-    // cualquier pose sin una caja "persona" de COCO superpuesta EN ESE CUADRO exacto, sin
-    // memoria ni tolerancia. Mismo problema que el filtro de arriba: una persona real podía
-    // perderse de `poses` un cuadro por mala suerte del verificador y no volver a
-    // detectarse nunca más, aunque el seguimiento siguiera activo. `cachedPersonBoxes`
-    // igual se sigue calculando arriba: lo usa `personaVerificada`, más abajo, por
-    // seguimiento y con 6 s de memoria — mucho más tolerante.)
-  }
-
   const handRes = settings.useHands && poses.length ? handLandmarker.detectForVideo(source, ts) : null;
   const hands = handRes?.landmarks || [];
   const handsByPose = assignHands(poses, hands, w, h);
@@ -741,6 +722,7 @@ function processFrame({ source, w, h }) {
     else addLog(`Diagnóstico: el detector de pose ve ${rawPoseCount} cuerpo(s), pero se descartaron (sin cara ni pierna creíble visible, o el verificador extra no los confirmó).`);
   }
 
+  let cropEnEstaPasada = false; // a lo sumo un recorte por cuadro: acota el costo en el celular
   // Evalúa a cada persona por separado.
   const list = people.update(poses, w, h, now).map((p) => {
     const pose = poses[p.index];
@@ -748,14 +730,28 @@ function processFrame({ source, w, h }) {
     // alertas de esta persona (toque de cabeza, caída, actividades): el verificador de
     // persona (COCO) y la evidencia real de cuerpo (cara o pierna, no solo hombros/cadera
     // que una mano sola puede "completar"). ---
-    if (objectDetector && !objectDetectorFailed && cachedPersonBoxes && p.track.objSeq !== objCheckSeq) {
-      p.track.objSeq = objCheckSeq;
-      const sc = poseConfirmadaComoPersona(pose, cachedPersonBoxes, w, h);
-      if (sc > 0) {
-        p.track.cocoHits = (p.track.cocoHits || 0) + 1;
-        if (p.track.cocoHits >= 2) { p.track.lastConfirmedPerson = now; p.track.lastConfirmedScore = sc; }
-      } else {
-        p.track.cocoHits = 0;
+    if (objectDetector && !objectDetectorFailed) {
+      const yaConfirmado = (now - (p.track.lastConfirmedPerson || 0)) <= FALL_CONFIRM_WINDOW_MS;
+      if (!cropEnEstaPasada && now - (p.track.cocoAt || 0) >= (yaConfirmado ? COCO_CHECK_SLOW_MS : COCO_CHECK_FAST_MS)) {
+        cropEnEstaPasada = true;
+        p.track.cocoAt = now;
+        try {
+          const sc = puntajePersonaEnRecorte(source, pose, w, h);
+          cocoUltimoPuntaje = sc;
+          if (sc >= COCO_SCORE_MIN) {
+            p.track.cocoHits = (p.track.cocoHits || 0) + 1;
+            if (p.track.cocoHits >= 2 || yaConfirmado) {
+              p.track.lastConfirmedPerson = now;
+              p.track.lastConfirmedScore = sc;
+              lastAnyConfirmAt = now;
+            }
+          } else {
+            p.track.cocoHits = 0;
+          }
+        } catch (e) {
+          console.warn('Verificador de persona falló, se desactiva en este equipo:', e);
+          objectDetectorFailed = true;
+        }
       }
     }
     // Caso real encontrado: en una habitación vacía de verdad (nadie real ahí), el
@@ -768,11 +764,11 @@ function processFrame({ source, w, h }) {
     // luz): nunca para uno nuevo que el verificador jamás confirmó.
     const hayVerificador = objectDetector && !objectDetectorFailed;
     const verificadorSinNadieHaceMucho = hayVerificador
-      && !!objSinPersonaDesde && now - objSinPersonaDesde > FALL_VERIFIER_GIVEUP_MS;
+      && !!lastAnyConfirmAt && now - lastAnyConfirmAt > FALL_VERIFIER_GIVEUP_MS;
     // Sin margen para seguimientos nuevos: con la cámara moviéndose se crean seguimientos
     // fantasma todo el tiempo, y un margen los dibujaba (y avisaba) hasta que COCO opinara.
     // Una persona real real se confirma enseguida porque COCO corre más seguido mientras
-    // haya algo sin confirmar (OBJ_CHECK_FAST_MS).
+    // haya algo sin confirmar (COCO_CHECK_FAST_MS).
     const personaVerificada = !hayVerificador
       || (now - (p.track.lastConfirmedPerson || 0)) <= FALL_CONFIRM_WINDOW_MS
       || (verificadorSinNadieHaceMucho && !!p.track.lastConfirmedPerson);
@@ -864,13 +860,13 @@ function processFrame({ source, w, h }) {
   const fallen = list.filter((p) => p.lying);
   const touching = list.filter((p) => p.res.touching);
   if (!list.length) {
-    if (now - lastNoPerson > 1000) { setStatus('warn', 'Buscando personas…'); lastNoPerson = now; }
+    if (now - lastNoPerson > 1000) { setStatus('warn', `Buscando personas… · COCO ${cocoUltimoPuntaje.toFixed(2)}`); lastNoPerson = now; }
   } else if (fallen.length) {
     setStatus('alert', `${fallen.map((p) => `Persona ${p.id}`).join(', ')} en el suelo · ${cuantas}`);
   } else if (touching.length) {
     setStatus('alert', `${touching.map((p) => `Persona ${p.id}`).join(', ')}: mano en la cabeza · ${cuantas}`);
   } else {
-    setStatus('ok', `Vigilando · ${cuantas}`);
+    setStatus('ok', `Vigilando · ${cuantas} · COCO ${cocoUltimoPuntaje.toFixed(2)}`);
   }
 
   frames++;
