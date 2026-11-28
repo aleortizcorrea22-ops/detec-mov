@@ -450,7 +450,14 @@ export function classifyPosture(pose, w, h, bedZones = []) {
   const drop = thighs.reduce((s, t) => s + t.drop, 0) / thighs.length; // cuánto baja la rodilla, en "troncos"
 
   // Sentada: muslo inclinado (>= 50°) o rodilla casi a la altura de la cadera (vista de frente, el muslo "se acorta").
-  const ankles = [pose[ANKLE.L], pose[ANKLE.R]].filter(vis).map((l) => px(l, w, h));
+  // El tobillo (si se ve) tiene que continuar la pierna de verdad: por DEBAJO de su
+  // rodilla correspondiente (nunca arriba) y a una distancia razonable (una espinilla
+  // real), no un punto suelto en cualquier lado. Mismo patrón que el codo o la rodilla.
+  const ankles = [[KNEE.L, ANKLE.L], [KNEE.R, ANKLE.R]]
+    .filter(([kIdx, aIdx]) => vis(pose[kIdx]) && vis(pose[aIdx]))
+    .map(([kIdx, aIdx]) => ({ knee: px(pose[kIdx], w, h), ankle: px(pose[aIdx], w, h) }))
+    .filter(({ knee, ankle }) => ankle.y > knee.y && dist(knee, ankle) >= 0.2 * torso && dist(knee, ankle) <= 3 * torso)
+    .map(({ ankle }) => ankle);
   const legShort = ankles.length ? (Math.max(...ankles.map((a) => a.y)) - hip.y) / torso < 1.25 : false;
   if (angle >= 50 || drop < 0.45 || (drop < 0.65 && legShort)) return { posture: 'sentada', inBed: false, hip, torso };
   if (angle <= 30 && drop >= 0.6) return { posture: 'parada', inBed: false, hip, torso };

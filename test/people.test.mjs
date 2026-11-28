@@ -233,6 +233,16 @@ test('postura: parada / sentada / acostada', () => {
   assert.equal(classifyPosture(lyingDown(), W, H).posture, 'acostada');
 });
 
+test('postura: un tobillo "alucinado" arriba de su rodilla (no continúa la pierna) no cuenta para "pierna corta"', () => {
+  // Misma idea que el codo o la rodilla: el tobillo tiene que estar por DEBAJO de su
+  // rodilla correspondiente. Acá el tobillo derecho queda arriba de la rodilla (al
+  // revés de una pierna real) — classifyPosture no debería inventar nada raro con eso.
+  const p = sitting();
+  p[28] = { ...p[28], y: (150 + 200) / H }; // tobillo derecho ahora ARRIBA de la rodilla (dy=360)
+  const r = classifyPosture(p, W, H);
+  assert.ok(['sentada', 'desconocida'].includes(r.posture)); // no debe romper ni inventar "parada"
+});
+
 test('postura: acostada dentro de la zona de cama → inBed', () => {
   const bed = [{ x: 0, y: 0.5, w: 0.6, h: 0.5 }];
   assert.equal(classifyPosture(lyingDown(), W, H, bed).inBed, true);
