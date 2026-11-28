@@ -5,7 +5,7 @@ import { setupInstallButton } from './install.js';
 // Visible en pantalla (junto al nombre) para confirmar de un vistazo si el celular/PC ya
 // tiene la versión más nueva, sin tener que abrir herramientas de desarrollador. Se sube
 // junto con el VERSION de sw.js en cada cambio.
-const APP_VERSION = 'v71';
+const APP_VERSION = 'v72';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo, loadLicenciaConfig } from './licencia.js';
 import { iniciarPanelAdmin, NOMBRE_ADMIN_SECRETO } from './admin-panel.js';
@@ -675,6 +675,14 @@ function processFrame({ source, w, h }) {
   let poses = filtrarPosesDuplicadas(poseRes.landmarks || [], w, h);
   const rawPoseCount = poses.length;
 
+  // PRIMER FILTRO, antes de seguir a nadie como persona: tiene que haber evidencia real
+  // de cuerpo humano (cara creíble — ojos, nariz — o una pierna de confianza alta). Un
+  // ventilador de techo, un respaldo tapizado, o cualquier objeto que se mueva puede
+  // "completar" un esqueleto con hombros y cadera para el modelo de pose, pero no le
+  // puede inventar una cara ni una pierna de verdad. Sin esto, ni siquiera se lo empieza
+  // a numerar como "Persona N": no llega a la pantalla ni a ninguna alerta.
+  poses = poses.filter(evidenciaDeCuerpoReal);
+
   // Verificación extra con un detector de objetos tipo COCO (misma familia que YOLO):
   // sabe distinguir "persona" de taza, mouse, teclado, lata, silla, etc., algo que el
   // modelo de pose no sabe hacer (solo dibuja un esqueleto, y a veces "completa" uno
@@ -716,7 +724,7 @@ function processFrame({ source, w, h }) {
   if (!poses.length && now - lastDiagLog > 6000) {
     lastDiagLog = now;
     if (rawPoseCount === 0) addLog('Diagnóstico: el detector de pose no ve ningún cuerpo en la imagen (puede ser cámara, luz o distancia).');
-    else addLog(`Diagnóstico: el detector de pose ve ${rawPoseCount} cuerpo(s), pero el verificador extra los descartó.`);
+    else addLog(`Diagnóstico: el detector de pose ve ${rawPoseCount} cuerpo(s), pero se descartaron (sin cara ni pierna creíble visible, o el verificador extra no los confirmó).`);
   }
 
   // Evalúa a cada persona por separado.
