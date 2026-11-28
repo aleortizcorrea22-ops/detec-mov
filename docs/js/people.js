@@ -430,7 +430,7 @@ export function fraccionCambiada(cur, prev, sw, sh, cx, cy, radio, umbralDif = 1
  * de la parte de abajo del 30 %, lejos de las dos zonas. Un brazo que se rasca mueve la cabeza pero
  * deja el torso quieto; sentarse o girar mueve las dos.
  */
-export function movimientoRegiones(cur, prev, sw, sh, cab, tor, umbralDif = 14) {
+export function movimientoRegiones(cur, prev, sw, sh, cab, tor, umbralDif = 10) {
   let c = 0; let nc = 0; let t = 0; let nt = 0; let f = 0; let nf = 0;
   const lejos = Math.max(cab.r, tor.r) * 2.2;
   for (let y = 0; y < sh; y++) {
@@ -457,13 +457,16 @@ export function movimientoRegiones(cur, prev, sw, sh, cab, tor, umbralDif = 14) 
  * falta una fracción de las muestras de la ventana, y un mínimo de muestras, para que un instante
  * suelto (un giro de cabeza, un cambio de luz) no alcance.
  */
-export function movimientoSostenido(hist, now, { ventanaMs = 2000, umbral = 0.03, fraccion = 0.7, minMuestras = 4, concentrado = 3, torsoMax = 0.4, fueraMax = 0.02 } = {}) {
+export function movimientoSostenido(hist, now, { ventanaMs = 3000, umbral = 0.015, fraccion = 0.6, minMuestras = 2, separacionMs = 800, concentrado = 3, torsoMax = 0.6, fueraMax = 0.02 } = {}) {
   while (hist.length && now - hist[0].t > 3000) hist.shift();
   const v = hist.filter((m) => now - m.t <= ventanaMs);
   if (v.length < minMuestras) return false;
   // tor = movimiento del torso (si se midió): un brazo rascándose mueve la cabeza y deja el torso quieto.
-  const con = v.filter((m) => m.s >= umbral && m.s >= concentrado * Math.max(m.f, 0.003) && m.f <= fueraMax && (m.tor === undefined || m.tor <= torsoMax * m.s)).length;
-  return con / v.length >= fraccion;
+  const buenas = v.filter((m) => m.s >= umbral && m.s >= concentrado * Math.max(m.f, 0.003) && m.f <= fueraMax && (m.tor === undefined || m.tor <= torsoMax * m.s));
+  // Por TIEMPO y no por cantidad de muestras (el celular puede procesar solo 2 cuadros por segundo): hacen falta
+  // al menos 2 muestras buenas separadas por separacionMs, para que un instante suelto no alcance.
+  if (buenas.length < 2 || buenas[buenas.length - 1].t - buenas[0].t < separacionMs) return false;
+  return buenas.length / v.length >= fraccion;
 }
 
 /**

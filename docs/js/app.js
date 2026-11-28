@@ -5,7 +5,7 @@ import { setupInstallButton } from './install.js';
 // Visible en pantalla (junto al nombre) para confirmar de un vistazo si el celular/PC ya
 // tiene la versión más nueva, sin tener que abrir herramientas de desarrollador. Se sube
 // junto con el VERSION de sw.js en cada cambio.
-const APP_VERSION = 'v99';
+const APP_VERSION = 'v101';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo, loadLicenciaConfig } from './licencia.js';
 import { aplicarConfigRemota, CLAVES_REMOTAS } from './config-remota.js';
@@ -801,6 +801,11 @@ function camaAutoCheck(source, w, h, now) {
 // abajo no. Medido en el video en vivo de un cuarto: con el brazo moviéndose sobre la cabeza el
 // cambio es 3-20 % y quieto ~0 %. Hace falta que sea sostenido (1.5 s) y concentrado cerca de la cabeza.
 const MOV_PASO_MS = 200;
+// En la cama, un brazo que se mueve de forma sostenida cerca de la cabeza (con poco movimiento afuera) es
+// evidencia de que ahi hay una persona viva: cuenta como persona confirmada durante este tiempo aunque COCO
+// no la confirme (acostada, tapada y con poca luz COCO falla). Una cama vacia no tiene ese movimiento.
+const MOV_PERSONA_MS = 8000;
+let movConfirmaAt = 0;
 const MOV_RADIO_CABEZA = 4.5; // en anchos de ojos: cara + pelo + lo que está pegado a la cabeza
 const MOV_RADIO_TORSO = 5; // alrededor de los hombros
 const movCanvas = document.createElement('canvas');
@@ -817,8 +822,8 @@ function capturarMovimiento(source, w, h, now) {
   if (!settings.alertCabeza || !modoCamaActivo()) { movCur = null; movPrev = null; movHist = []; return; }
   if (now - movAt < MOV_PASO_MS) return;
   movAt = now;
-  const sw = Math.max(32, Math.round(w / 4));
-  const sh = Math.max(32, Math.round(h / 4));
+  const sw = Math.max(32, Math.round(w / 2));
+  const sh = Math.max(32, Math.round(h / 2));
   movCanvas.width = sw;
   movCanvas.height = sh;
   movCtx.drawImage(source, 0, 0, w, h, 0, 0, sw, sh);
@@ -976,6 +981,8 @@ function processFrame({ source, w, h }) {
     const brazoAlto = settings.alertPideAyuda && brazoLevantado(pose, w, h, handsByPose[p.index]);
     // El historial de movimiento se actualiza en cada cuadro de la cama, aunque la persona no esté confirmada.
     const movCabeza = enCama && settings.alertCabeza ? movimientoCabeza(pose, now) : false;
+    if (movCabeza) movConfirmaAt = now;
+    const porMovimiento = enCama && (now - movConfirmaAt) <= MOV_PERSONA_MS;
     let res;
     let touchState = 'idle';
     if (settings.alertCabeza) {
@@ -1000,7 +1007,7 @@ function processFrame({ source, w, h }) {
       res = { ...resCrudo, touching: enCama
         // En la cama el esqueleto NO sirve (amontona los puntos cerca de la cabeza aunque los brazos estén
         // abajo: daba avisos falsos "(mano derecha)"): solo cuenta el brazo moviéndose cerca de la cabeza.
-        ? (movCabeza && personaFuerte)
+        ? (movCabeza && (personaFuerte || porMovimiento))
         : (resCrudo.touching && cuerpoRealConfirmado && personaFuerte && brazoVinoDeAbajo && !brazoAlto) };
       touchState = p.track.touch.update(res.touching, now);
     } else {
@@ -1043,7 +1050,7 @@ function processFrame({ source, w, h }) {
     // Se exige mantenerse confirmada un ratito (PERSON_STABLE_MS) antes de dibujarse en
     // pantalla o avisar nada — una persona real se mantiene mucho más que eso.
     if (personaConfirmadaAhora) { if (!p.track.estableDesde) p.track.estableDesde = now; } else { p.track.estableDesde = null; }
-    const personaConfirmada = personaVerificada && p.track.estableDesde !== null && (now - p.track.estableDesde) >= (enCama ? PERSON_STABLE_CAMA_MS : PERSON_STABLE_MS);
+    const personaConfirmada = (personaVerificada && p.track.estableDesde !== null && (now - p.track.estableDesde) >= (enCama ? PERSON_STABLE_CAMA_MS : PERSON_STABLE_MS)) || porMovimiento;
     const eventosConfirmados = eventosPendientes(p.track.pendingEv ??= {}, enCama ? act.events.filter((e) => !EVENTOS_SOLO_DE_PIE.includes(e)) : act.events, now, personaConfirmada && personaFuerte, (e) => e === 'pide_ayuda' && res.touching);
     return { id: p.id, track: p.track, pose, hands: handsByPose[p.index], res, touchState, lying, fallState, box: poseBox(pose, w, h),
       personaConfirmada, brazoArriba: act.brazoAhora, posture: act.posture, walking: act.walking, inBed: enCama || (act.lyingNow && act.inBed), events: eventosConfirmados,
