@@ -15,20 +15,36 @@ const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 export const HIP = { L: 23, R: 24 };
 
 /**
- * ¿Hay evidencia real de que esto es un CUERPO HUMANO (y no, por ejemplo, una mano sola
- * cerca de cámara con hombros y cadera "completados" por el modelo)? Dos pruebas
- * independientes, cualquiera alcanza, pero ninguna se conforma con un punto suelto:
- *  - Cara creíble: los dos ojos, las dos orejas, o la nariz + un ojo (nunca un solo
- *    punto de cara aislado, que el modelo adivina seguido sin que haya nadie ahí).
+ * ¿Hay evidencia real de que esto es un CUERPO HUMANO (y no, por ejemplo, un mouse de PC
+ * o una mano sola cerca de cámara con un par de puntos de cara "completados" por el
+ * modelo)? Dos pruebas independientes, cualquiera alcanza:
+ *  - Cara creíble: hace falta SIEMPRE la nariz (es el punto que, puesto al azar sobre un
+ *    objeto cualquiera, rara vez cae en el lugar anatómico correcto) Y que esté bien
+ *    ubicada respecto de los ojos o las orejas: por DEBAJO de los ojos (nunca al lado o
+ *    arriba), o ENTRE las dos orejas en sentido horizontal. Dos ojos o dos orejas sueltos,
+ *    sin una nariz en el medio en la posición correcta, ya no alcanzan por sí solos (un
+ *    botón y una ruedita de un mouse pueden parecer "dos ojos" para el modelo, pero no le
+ *    arma además una nariz debajo, en el lugar justo).
  *  - Pierna creíble: al menos una rodilla con confianza ALTA (0.70, no el mínimo general
  *    de 0.55 — es el punto que más se "inventa" con mantas o objetos de por medio).
  * Se usa para la caída (la alerta más grave): sin cara NI piernas, no se arriesga nada.
  */
 export function evidenciaDeCuerpoReal(pose) {
-  const ojos = vis(pose[P.L_EYE]) && vis(pose[P.R_EYE]);
-  const orejas = vis(pose[P.L_EAR]) && vis(pose[P.R_EAR]);
-  const narizYOjo = vis(pose[P.NOSE]) && (vis(pose[P.L_EYE]) || vis(pose[P.R_EYE]));
-  const caraCreible = ojos || orejas || narizYOjo;
+  const nose = pose[P.NOSE];
+  let caraCreible = false;
+  if (vis(nose)) {
+    const ojosVis = [pose[P.L_EYE], pose[P.R_EYE]].filter(vis);
+    if (ojosVis.length) {
+      const eyeYAvg = ojosVis.reduce((s, e) => s + e.y, 0) / ojosVis.length;
+      if (nose.y > eyeYAvg) caraCreible = true; // la nariz va por debajo de los ojos
+    } else if (vis(pose[P.L_EAR]) && vis(pose[P.R_EAR])) {
+      const le = pose[P.L_EAR]; const re = pose[P.R_EAR];
+      const minX = Math.min(le.x, re.x); const maxX = Math.max(le.x, re.x);
+      const earYAvg = (le.y + re.y) / 2;
+      // la nariz, entre las dos orejas (en x) y no mucho más lejos que ese ancho (en y).
+      if (nose.x >= minX && nose.x <= maxX && Math.abs(nose.y - earYAvg) <= (maxX - minX)) caraCreible = true;
+    }
+  }
   const piernaCreible = [pose[25], pose[26]].some((k) => k && k.visibility !== undefined && k.visibility >= 0.7);
   return caraCreible || piernaCreible;
 }
