@@ -5,7 +5,7 @@ import { setupInstallButton } from './install.js';
 // Visible en pantalla (junto al nombre) para confirmar de un vistazo si el celular/PC ya
 // tiene la versión más nueva, sin tener que abrir herramientas de desarrollador. Se sube
 // junto con el VERSION de sw.js en cada cambio.
-const APP_VERSION = 'v98';
+const APP_VERSION = 'v99';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo, loadLicenciaConfig } from './licencia.js';
 import { aplicarConfigRemota, CLAVES_REMOTAS } from './config-remota.js';
@@ -501,8 +501,15 @@ async function openLivePeer(id) {
       ? `${base}multiver.html?id=${encodeURIComponent(idSistema)}`
       : `${base}ver.html?n=${encodeURIComponent(nombreVisible())}#${id}`;
     addLog(`Video en vivo listo: ${link}`);
+    // No se reenvía el link si ya se mandó hace menos de 6 horas: las actualizaciones de la app
+    // reinician el vigía y antes cada reinicio llenaba el grupo de links repetidos.
+    let ultimoLink = 0;
+    try { ultimoLink = Number(localStorage.getItem('detecmov.live.linkAt')) || 0; } catch { /* sin almacenamiento */ }
     try {
-      await sendAlert({ text: `🔴 ${nombreVisible()}: ver esta cámara en vivo\n${link}` });
+      if (Date.now() - ultimoLink > 6 * 3600 * 1000) {
+        await sendAlert({ text: `🔴 ${nombreVisible()}: ver esta cámara en vivo\n${link}` });
+        try { localStorage.setItem('detecmov.live.linkAt', String(Date.now())); } catch { /* sin almacenamiento */ }
+      }
     } catch (e) {
       addLog(`No se pudo mandar el link por Telegram: ${e.message}`, 'alert');
     }
