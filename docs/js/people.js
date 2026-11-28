@@ -404,6 +404,42 @@ export function eventosPendientes(pend, nuevos, ahora, puedeAvisar, excluido = (
 }
 
 /**
+ * Fracción de píxeles que cambiaron entre dos cuadros (RGBA, mismo tamaño): `dentro` = adentro del
+ * círculo (cx, cy, radio) y `fuera` = en el resto del cuadro de la parte de abajo del 30 %, fuera de
+ * un círculo del doble de radio (para distinguir un movimiento local de un cambio de luz global).
+ */
+export function fraccionCambiada(cur, prev, sw, sh, cx, cy, radio, umbralDif = 14) {
+  let dentro = 0; let nDentro = 0; let fuera = 0; let nFuera = 0;
+  const r2 = radio * 2;
+  for (let y = 0; y < sh; y++) {
+    for (let x = 0; x < sw; x++) {
+      const dd = Math.hypot(x - cx, y - cy);
+      if (dd > r2 && y <= sh * 0.3) continue;
+      const k = (y * sw + x) * 4;
+      const dif = (Math.abs(cur[k] - prev[k]) + Math.abs(cur[k + 1] - prev[k + 1]) + Math.abs(cur[k + 2] - prev[k + 2])) / 3;
+      const cambio = dif > umbralDif ? 1 : 0;
+      if (dd <= radio) { dentro += cambio; nDentro++; } else if (dd > r2) { fuera += cambio; nFuera++; }
+    }
+  }
+  return { dentro: nDentro ? dentro / nDentro : 0, fuera: nFuera ? fuera / nFuera : 0 };
+}
+
+/**
+ * ¿Hay movimiento SOSTENIDO cerca de la cabeza? `hist` = [{t, s, f}] (s = movimiento cerca de la
+ * cabeza, f = movimiento afuera). Se queda con los últimos 3 s (modifica el arreglo). Cuenta como
+ * movimiento una muestra con s >= umbral y concentrada (s >= concentrado veces lo de afuera); hace
+ * falta una fracción de las muestras de la ventana, y un mínimo de muestras, para que un instante
+ * suelto (un giro de cabeza, un cambio de luz) no alcance.
+ */
+export function movimientoSostenido(hist, now, { ventanaMs = 1500, umbral = 0.03, fraccion = 0.6, minMuestras = 3, concentrado = 3 } = {}) {
+  while (hist.length && now - hist[0].t > 3000) hist.shift();
+  const v = hist.filter((m) => now - m.t <= ventanaMs);
+  if (v.length < minMuestras) return false;
+  const con = v.filter((m) => m.s >= umbral && m.s >= concentrado * Math.max(m.f, 0.003)).length;
+  return con / v.length >= fraccion;
+}
+
+/**
  * ¿Lo que el modelo de pose tomó por una persona es en realidad una MANO? Típico: la palma
  * mostrada a la cámara, de cerca: el modelo de pose "inventa" un cuerpo sobre ella y hasta el
  * detector de personas (COCO) puede darle puntaje. Si una mano detectada tiene su centro

@@ -1,11 +1,11 @@
 import { evaluateFrame, P, manoAbajo } from './rules.js';
-import { PeopleTracker, assignHands, poseBox, filtrarPosesDuplicadas, zonePoints, evidenciaDeCuerpoReal, brazoLevantado, manoNoPersona, eventosPendientes, enZonaCama, iouCajas, zonaDeCaja } from './people.js';
+import { PeopleTracker, assignHands, poseBox, filtrarPosesDuplicadas, zonePoints, evidenciaDeCuerpoReal, brazoLevantado, manoNoPersona, eventosPendientes, enZonaCama, iouCajas, zonaDeCaja, fraccionCambiada, movimientoSostenido } from './people.js';
 import { setupInstallButton } from './install.js';
 
 // Visible en pantalla (junto al nombre) para confirmar de un vistazo si el celular/PC ya
 // tiene la versión más nueva, sin tener que abrir herramientas de desarrollador. Se sube
 // junto con el VERSION de sw.js en cada cambio.
-const APP_VERSION = 'v94';
+const APP_VERSION = 'v95';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo, loadLicenciaConfig } from './licencia.js';
 import { aplicarConfigRemota, CLAVES_REMOTAS } from './config-remota.js';
@@ -784,6 +784,60 @@ function camaAutoCheck(source, w, h, now) {
   } catch (e) { console.warn('No se pudo detectar la cama', e); }
 }
 
+// MOVIMIENTO CERCA DE LA CABEZA (solo en la cama, con "toque de cabeza" y modo cama tildados).
+// Acostada, el modelo de pose no ubica bien los brazos (los amontona cerca de la cabeza aunque estén
+// abajo), pero sí ubica la cara. Entonces se mira cuánto CAMBIA la imagen en un círculo de 8 anchos de
+// ojos alrededor de la cara: un brazo rascándose o tocando la cabeza lo mueve, un brazo quieto o
+// abajo no. Medido en el video en vivo de un cuarto: con el brazo moviéndose sobre la cabeza el
+// cambio es 3-20 % y quieto ~0 %. Hace falta que sea sostenido (1.5 s) y concentrado cerca de la cabeza.
+const MOV_PASO_MS = 200;
+const MOV_RADIO_OJOS = 8;
+const movCanvas = document.createElement('canvas');
+const movCtx = movCanvas.getContext('2d', { willReadFrequently: true });
+let movPrev = null;
+let movCur = null;
+let movAt = 0;
+let movNuevo = false;
+let movHist = []; // historial GLOBAL (una persona en la cama): el seguimiento por persona se recrea seguido
+let movDim = { sw: 0, sh: 0 };
+
+function capturarMovimiento(source, w, h, now) {
+  movNuevo = false;
+  if (!settings.alertCabeza || !modoCamaActivo()) { movCur = null; movPrev = null; movHist = []; return; }
+  if (now - movAt < MOV_PASO_MS) return;
+  movAt = now;
+  const sw = Math.max(32, Math.round(w / 4));
+  const sh = Math.max(32, Math.round(h / 4));
+  movCanvas.width = sw;
+  movCanvas.height = sh;
+  movCtx.drawImage(source, 0, 0, w, h, 0, 0, sw, sh);
+  const datos = movCtx.getImageData(0, 0, sw, sh).data;
+  movPrev = movCur && movDim.sw === sw && movDim.sh === sh ? movCur : null;
+  movCur = new Uint8ClampedArray(datos);
+  movDim = { sw, sh };
+  movNuevo = !!movPrev;
+}
+
+/** ¿Hay un brazo moviéndose cerca de la cabeza de esta persona (sostenido)? */
+function movimientoCabeza(pose, now) {
+  if (movNuevo) {
+    const nariz = pose[0];
+    const oi = pose[2];
+    const od = pose[5];
+    if (nariz && oi && od && (nariz.visibility ?? 0) >= 0.4 && (oi.visibility ?? 0) >= 0.3 && (od.visibility ?? 0) >= 0.3) {
+      const { sw, sh } = movDim;
+      const ojo = Math.hypot((oi.x - od.x) * sw, (oi.y - od.y) * sh);
+      if (ojo > 2) {
+        const cx = ((nariz.x + oi.x + od.x) / 3) * sw;
+        const cy = ((nariz.y + oi.y + od.y) / 3) * sh;
+        const { dentro, fuera } = fraccionCambiada(movCur, movPrev, sw, sh, cx, cy, ojo * MOV_RADIO_OJOS);
+        movHist.push({ t: now, s: dentro, f: fuera });
+      }
+    }
+  }
+  return movimientoSostenido(movHist, now);
+}
+
 function processFrame({ source, w, h }) {
   let ts = performance.now();
   if (ts <= lastTs) ts = lastTs + 1;
@@ -818,6 +872,7 @@ function processFrame({ source, w, h }) {
   }
 
   camaAutoCheck(source, w, h, now);
+  capturarMovimiento(source, w, h, now);
   let cropEnEstaPasada = false; // a lo sumo un recorte por cuadro: acota el costo en el celular
   // Evalúa a cada persona por separado.
   const list = people.update(poses, w, h, now).map((p) => {
@@ -926,7 +981,9 @@ function processFrame({ source, w, h }) {
       // `res.touching` es lo que se usa en todos lados (overlay, estado, alerta): ya
       // incluye estos gates, para no mostrar "CABEZA" en pantalla por algo que de todas
       // formas no iba a avisar.
-      res = { ...resCrudo, touching: resCrudo.touching && cuerpoRealConfirmado && personaFuerte && brazoVinoDeAbajo && !brazoAlto };
+      res = { ...resCrudo, touching: (resCrudo.touching && cuerpoRealConfirmado && personaFuerte && brazoVinoDeAbajo && !brazoAlto)
+        // En la cama: brazo moviéndose cerca de la cabeza (rascarse / tocarse), ver movimientoCabeza.
+        || (enCama && personaFuerte && movimientoCabeza(pose, now)) };
       touchState = p.track.touch.update(res.touching, now);
     } else {
       res = { touching: false, zone: null, closest: null, via: null, side: null };
