@@ -5,7 +5,7 @@ import { setupInstallButton } from './install.js';
 // Visible en pantalla (junto al nombre) para confirmar de un vistazo si el celular/PC ya
 // tiene la versión más nueva, sin tener que abrir herramientas de desarrollador. Se sube
 // junto con el VERSION de sw.js en cada cambio.
-const APP_VERSION = 'v101';
+const APP_VERSION = 'v102';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo, loadLicenciaConfig } from './licencia.js';
 import { aplicarConfigRemota, CLAVES_REMOTAS } from './config-remota.js';
@@ -1009,7 +1009,7 @@ function processFrame({ source, w, h }) {
         // abajo: daba avisos falsos "(mano derecha)"): solo cuenta el brazo moviéndose cerca de la cabeza.
         ? (movCabeza && (personaFuerte || porMovimiento))
         : (resCrudo.touching && cuerpoRealConfirmado && personaFuerte && brazoVinoDeAbajo && !brazoAlto) };
-      touchState = p.track.touch.update(res.touching, now);
+      touchState = p.track.touch.update(res.touching, now, enCama);
     } else {
       res = { touching: false, zone: null, closest: null, via: null, side: null };
     }

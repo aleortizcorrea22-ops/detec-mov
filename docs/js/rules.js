@@ -172,14 +172,16 @@ export class TouchTracker {
   }
 
   /** @returns {'alert'|'touching'|'idle'|'cooldown'} */
-  update(touching, now) {
+  // repetir = true: si el toque sigue sin cortarse, vuelve a avisar cada vez que pasa la espera (cooldownMs),
+  // en vez de avisar una sola vez por toque continuo (en la cama la persona puede seguir rascandose mucho rato).
+  update(touching, now, repetir = false) {
     if (touching) {
       if (this.since === null || now - this.lastSeen > this.graceMs) {
         this.since = now;
         this.alertedThisTouch = false;
       }
       this.lastSeen = now;
-      if (!this.alertedThisTouch && now - this.since >= this.holdMs) {
+      if ((!this.alertedThisTouch || repetir) && now - this.since >= this.holdMs) {
         if (now - this.lastAlert >= this.cooldownMs) {
           this.alertedThisTouch = true;
           this.lastAlert = now;
