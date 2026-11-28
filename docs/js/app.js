@@ -5,7 +5,7 @@ import { setupInstallButton } from './install.js';
 // Visible en pantalla (junto al nombre) para confirmar de un vistazo si el celular/PC ya
 // tiene la versión más nueva, sin tener que abrir herramientas de desarrollador. Se sube
 // junto con el VERSION de sw.js en cada cambio.
-const APP_VERSION = 'v107';
+const APP_VERSION = 'v108';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo, loadLicenciaConfig } from './licencia.js';
 import { aplicarConfigRemota, CLAVES_REMOTAS } from './config-remota.js';
@@ -816,6 +816,13 @@ const MOV_CARA_HOMBROS_MAX = 3.0;
 // (diagnostico en vivo 17:45-17:47: 1 muestra buena de 82-101). Ahora el tope fijo solo corta cambios fuertes de toda la
 // imagen (0.15: prender la luz) y la cabeza tiene que moverse al menos el doble que el resto (relativo al ruido).
 const MOV_PARAMS = { torsoMax: 1.3, fueraMax: 0.15, concentrado: 2 };
+// v108: umbral POR PIXEL que se adapta al ruido. Con poca luz el ruido del sensor pasa el umbral fijo (10) en muchos
+// pixeles y "todo se mueve" (afuera 0.11 a las 17:50): la cabeza no se distingue del ruido. Con alguien acostado la
+// zona de afuera casi no cambia, asi que si cambia mas del 3 % es ruido y el umbral sube; si cambia menos del 1 %,
+// baja. Con buena luz queda en 10 (igual que antes).
+const MOV_UMBRAL_MIN = 10;
+const MOV_UMBRAL_MAX = 60;
+let movUmbralDif = MOV_UMBRAL_MIN;
 const movCanvas = document.createElement('canvas');
 const movCtx = movCanvas.getContext('2d', { willReadFrequently: true });
 let movPrev = null;
@@ -881,7 +888,9 @@ function movimientoCabeza(pose, now) {
         const cabHom = Math.hypot(cab.x - tor.x, cab.y - tor.y) / Math.max(hom, 1);
         diagPush(diag.cabHomV, cabHom);
         if (cabHom <= MOV_CARA_HOMBROS_MAX) {
-          const { cabeza, torso, fuera } = movimientoRegiones(movCur, movPrev, sw, sh, cab, tor);
+          const { cabeza, torso, fuera } = movimientoRegiones(movCur, movPrev, sw, sh, cab, tor, movUmbralDif);
+          if (fuera > 0.03) movUmbralDif = Math.min(MOV_UMBRAL_MAX, movUmbralDif + 2);
+          else if (fuera < 0.01) movUmbralDif = Math.max(MOV_UMBRAL_MIN, movUmbralDif - 1);
           movHist.push({ t: now, s: cabeza, f: fuera, tor: torso });
           diag.cara++; diag.muestras++;
           diagPush(diag.cabV, cabeza); diagPush(diag.torV, torso); diagPush(diag.fueV, fuera);
