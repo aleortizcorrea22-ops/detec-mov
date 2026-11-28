@@ -1,11 +1,11 @@
-import { evaluateFrame, P } from './rules.js';
+import { evaluateFrame, P, manoAbajo } from './rules.js';
 import { PeopleTracker, assignHands, poseBox, filtrarPosesDuplicadas, zonePoints, evidenciaDeCuerpoReal } from './people.js';
 import { setupInstallButton } from './install.js';
 
 // Visible en pantalla (junto al nombre) para confirmar de un vistazo si el celular/PC ya
 // tiene la versión más nueva, sin tener que abrir herramientas de desarrollador. Se sube
 // junto con el VERSION de sw.js en cada cambio.
-const APP_VERSION = 'v68';
+const APP_VERSION = 'v69';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo, loadLicenciaConfig } from './licencia.js';
 import { iniciarPanelAdmin, NOMBRE_ADMIN_SECRETO } from './admin-panel.js';
@@ -649,6 +649,10 @@ const FALL_VERIFIER_GIVEUP_MS = 20000;
 // segundo" (igual escala que walkSpeed, ~0.7 = caminar). Una caída ronda 1.5-3; un
 // recline lento, bastante menos de 1.
 const FALL_SPEED_MIN = 1.1;
+// El brazo tiene que haber estado claramente ABAJO hace poco antes de contar un toque de
+// cabeza (ver manoAbajo en rules.js): así se exige ver subir el brazo de verdad, cuadro a
+// cuadro, en vez de aceptar que la mano "aparezca" ya arriba de golpe.
+const HAND_RISE_WINDOW_MS = 2500;
 
 /** ¿El recuadro de esta pose cae adentro (con margen) de algún "person" confirmado
  * por el detector de objetos? Si no hay margen de superposición, no se confía en la pose. */
@@ -734,14 +738,21 @@ function processFrame({ source, w, h }) {
     if (evidenciaDeCuerpoReal(pose)) p.track.lastBodyEvidenceAt = now;
     const cuerpoRealConfirmado = (now - (p.track.lastBodyEvidenceAt || 0)) <= FALL_CONFIRM_WINDOW_MS;
 
+    // El brazo tiene que venir DE ABAJO: se sigue cuadro a cuadro si la mano estuvo
+    // claramente baja hace poco (no que "aparezca" ya arriba de golpe). Sin eso, tocar la
+    // cabeza no cuenta, aunque la mano esté ahí ahora mismo.
+    if (manoAbajo(pose, handsByPose[p.index], w, h)) p.track.lastHandDownAt = now;
+    const brazoVinoDeAbajo = (now - (p.track.lastHandDownAt || 0)) <= HAND_RISE_WINDOW_MS;
+
     // Toque de cabeza: además de la forma de la cabeza/cara (ya la valida evaluateFrame),
-    // tiene que tratarse de una persona confirmada por el verificador y con evidencia real
-    // de cuerpo (no una mano sola haciéndose pasar por alguien tocándose la cabeza).
+    // tiene que tratarse de una persona confirmada por el verificador, con evidencia real
+    // de cuerpo (no una mano sola haciéndose pasar por alguien tocándose la cabeza), y con
+    // el brazo habiendo subido de verdad desde abajo.
     const resCrudo = evaluateFrame(pose, handsByPose[p.index], w, h, { sensitivity: settings.sensitivity, includeFace: settings.includeFace });
     // `res.touching` es lo que se usa en todos lados (overlay, estado, alerta): ya
-    // incluye el gate de persona confirmada + cuerpo real, para no mostrar "CABEZA" en
-    // pantalla por algo que de todas formas no iba a avisar.
-    const res = { ...resCrudo, touching: resCrudo.touching && personaVerificada && cuerpoRealConfirmado };
+    // incluye estos gates, para no mostrar "CABEZA" en pantalla por algo que de todas
+    // formas no iba a avisar.
+    const res = { ...resCrudo, touching: resCrudo.touching && personaVerificada && cuerpoRealConfirmado && brazoVinoDeAbajo };
     const touchState = p.track.touch.update(res.touching, now);
     const watchAny = settings.watchZoneEnter || settings.watchZoneExit || settings.watchZoneInside || settings.watchZoneOutside;
     const act = p.track.act.update(pose, w, h, now, {
@@ -1606,7 +1617,12 @@ if (settings.deviceNameAsked) {
 // y apenas la hay, se recarga sola (unos segundos sin vigilar, mucho mejor que quedarse
 // semanas con una versión vieja sin que nadie se entere). No hace falta tocar el celular.
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js').then((reg) => {
+  // `updateViaCache: 'none'`: al chequear sw.js, ignorar cualquier caché HTTP intermedio
+  // (del navegador, del proveedor de internet, etc.) y pedirlo siempre directo al
+  // servidor. Sin esto, un chequeo podría "confirmar" una copia vieja en caché y pensar
+  // que no hay nada nuevo, aunque sí lo haya.
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then((reg) => {
+    reg.update().catch(() => {}); // chequeo inmediato, no esperar los primeros 5 minutos
     const UPDATE_CHECK_MS = 5 * 60 * 1000; // cada 5 minutos
     setInterval(() => reg.update().catch(() => {}), UPDATE_CHECK_MS);
     // También al volver a tener la app en pantalla (la vuelven a mirar, cambian de app y
@@ -1614,6 +1630,19 @@ if ('serviceWorker' in navigator) {
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
     window.addEventListener('online', () => reg.update().catch(() => {}));
   }).catch((e) => console.warn('SW no registrado', e));
+
+  // Red de seguridad extra, que NO depende de que este JavaScript siga vivo: una
+  // recarga forzada de la página cada 20 minutos (el navegador la hace solo, nativa,
+  // aunque el script se haya colgado o tirado un error). Cada recarga es una "navegación"
+  // de verdad, que es el momento en que el navegador SIEMPRE revisa si el service worker
+  // tiene una versión nueva — la forma más segura que existe de no quedar pegado en una
+  // versión vieja para siempre en un celular que nadie va a tocar.
+  if (settings.deviceNameAsked) {
+    const meta = document.createElement('meta');
+    meta.httpEquiv = 'refresh';
+    meta.content = '1200';
+    document.head.appendChild(meta);
+  }
 
   let yaRecargando = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {

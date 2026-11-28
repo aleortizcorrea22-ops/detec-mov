@@ -101,6 +101,29 @@ export function poseHandPoints(pose, w, h) {
 }
 
 /**
+ * ¿Hay alguna mano/muñeca claramente ABAJO ahora mismo (a la altura del cuerpo o más
+ * abajo, lejos de la cabeza)? Sirve para exigir que el brazo se vea venir de abajo antes
+ * de contar un toque de cabeza (no que "aparezca" ya arriba, de golpe): una persona real
+ * levanta el brazo desde abajo, pasa la cara y llega a la cabeza; eso es lo que hay que
+ * seguir cuadro a cuadro, no solo mirar dónde está la mano en un instante suelto.
+ */
+export function manoAbajo(pose, hands, w, h) {
+  const zone = headZone(pose, w, h);
+  const shoulderY = zone ? zone.shoulderY
+    : (visible(pose[P.L_SHOULDER]) && visible(pose[P.R_SHOULDER])
+      ? (pose[P.L_SHOULDER].y + pose[P.R_SHOULDER].y) / 2 * h
+      : null);
+  if (shoulderY === null) return false;
+  const puntos = [];
+  for (const { points } of poseHandPoints(pose, w, h)) puntos.push(...points);
+  for (const hand of hands || []) {
+    if (hand?.[0]) puntos.push(px(hand[0], w, h)); // muñeca
+    for (const i of FINGERTIPS) if (hand?.[i]) puntos.push(px(hand[i], w, h));
+  }
+  return puntos.some((pt) => pt.y > shoulderY);
+}
+
+/**
  * Evalúa un cuadro.
  * @param pose  landmarks de pose de UNA persona (array de 33 {x,y,visibility})
  * @param hands array de manos (cada una array de 21 {x,y}) del HandLandmarker, opcional
