@@ -350,6 +350,33 @@ export function ladoDeZona(pt, zone) {
   return Object.entries(d).sort((a, b) => b[1] - a[1])[0][0];
 }
 
+/**
+ * ¿Lo que el modelo de pose tomó por una persona es en realidad una MANO? Típico: la palma
+ * mostrada a la cámara, de cerca: el modelo de pose "inventa" un cuerpo sobre ella y hasta el
+ * detector de personas (COCO) puede darle puntaje. Si una mano detectada tiene su centro
+ * dentro del recuadro de ese "cuerpo" y ocupa buena parte de él, es una mano: en una persona
+ * real la mano es chica frente al cuerpo (típicamente menos del 10 % de su recuadro).
+ * @param {Array<Array<{x:number,y:number}>>} manos manos (landmarks 0..1) de TODO el cuadro
+ */
+export function manoNoPersona(pose, manos, w, h, minRatio = 0.4) {
+  const box = poseBox(pose, w, h);
+  if (!box || !manos?.length) return false;
+  const areaPose = Math.max(box.w * box.h, 1);
+  for (const mano of manos) {
+    if (!mano?.length) continue;
+    const xs = mano.map((p) => p.x * w);
+    const ys = mano.map((p) => p.y * h);
+    const x0 = Math.min(...xs); const x1 = Math.max(...xs);
+    const y0 = Math.min(...ys); const y1 = Math.max(...ys);
+    const cx = (x0 + x1) / 2;
+    const cy = (y0 + y1) / 2;
+    const dentro = cx >= box.x - box.w * 0.2 && cx <= box.x + box.w * 1.2
+      && cy >= box.y - box.h * 0.2 && cy <= box.y + box.h * 1.2;
+    if (dentro && (x1 - x0) * (y1 - y0) >= minRatio * areaPose) return true;
+  }
+  return false;
+}
+
 /** ¿Tiene un brazo levantado MÁS ARRIBA QUE LA CABEZA (como pidiendo algo o llamando)?
  * Tres formas de verlo, de la más a la menos directa:
  *  1. la muñeca se ve y queda por encima de la cabeza (con el codo en el medio, si se ve);

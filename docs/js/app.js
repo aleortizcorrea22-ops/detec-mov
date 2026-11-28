@@ -1,11 +1,11 @@
 import { evaluateFrame, P, manoAbajo } from './rules.js';
-import { PeopleTracker, assignHands, poseBox, filtrarPosesDuplicadas, zonePoints, evidenciaDeCuerpoReal, brazoLevantado } from './people.js';
+import { PeopleTracker, assignHands, poseBox, filtrarPosesDuplicadas, zonePoints, evidenciaDeCuerpoReal, brazoLevantado, manoNoPersona } from './people.js';
 import { setupInstallButton } from './install.js';
 
 // Visible en pantalla (junto al nombre) para confirmar de un vistazo si el celular/PC ya
 // tiene la versión más nueva, sin tener que abrir herramientas de desarrollador. Se sube
 // junto con el VERSION de sw.js en cada cambio.
-const APP_VERSION = 'v86';
+const APP_VERSION = 'v87';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo, loadLicenciaConfig } from './licencia.js';
 import { iniciarPanelAdmin, NOMBRE_ADMIN_SECRETO } from './admin-panel.js';
@@ -669,6 +669,10 @@ const COCO_CHECK_SLOW_MS = 1000; // seguimiento ya confirmado
 const COCO_CROP_MAX = 400; // lado máximo del recorte: el modelo lo achica a 320 igual
 const cropCanvas = document.createElement('canvas');
 const cropCtx = cropCanvas.getContext('2d');
+// Una mano (palma mostrada a la cámara) que el modelo de pose tomó por un cuerpo: se bloquea
+// ese seguimiento un rato, para que no parpadee entre mano y persona.
+const MANO_BLOQUEO_MS = 1500;
+let manoRechazadaAt = 0;
 let cocoUltimoPuntaje = 0; // se muestra en la barra de estado para poder diagnosticar en el celular
 
 /** Mejor puntaje de "persona" que COCO le da al recorte alrededor de este esqueleto. */
@@ -730,7 +734,17 @@ function processFrame({ source, w, h }) {
     // alertas de esta persona (toque de cabeza, caída, actividades): el verificador de
     // persona (COCO) y la evidencia real de cuerpo (cara o pierna, no solo hombros/cadera
     // que una mano sola puede "completar"). ---
-    if (objectDetector && !objectDetectorFailed) {
+    // Una MANO (típico: la palma al frente de la cámara) no es una persona, aunque el modelo de
+    // pose invente un cuerpo sobre ella y COCO le dé algo de puntaje.
+    if (manoNoPersona(pose, hands, w, h)) {
+      p.track.manoVistaAt = now;
+      p.track.cocoHits = 0;
+      p.track.lastConfirmedPerson = 0;
+      p.track.lastConfirmedScore = 0;
+      manoRechazadaAt = now;
+    }
+    const esMano = (now - (p.track.manoVistaAt || 0)) <= MANO_BLOQUEO_MS;
+    if (!esMano && objectDetector && !objectDetectorFailed) {
       const yaConfirmado = (now - (p.track.lastConfirmedPerson || 0)) <= FALL_CONFIRM_WINDOW_MS;
       if (!cropEnEstaPasada && now - (p.track.cocoAt || 0) >= (yaConfirmado ? COCO_CHECK_SLOW_MS : COCO_CHECK_FAST_MS)) {
         cropEnEstaPasada = true;
@@ -769,10 +783,10 @@ function processFrame({ source, w, h }) {
     // fantasma todo el tiempo, y un margen los dibujaba (y avisaba) hasta que COCO opinara.
     // Una persona real real se confirma enseguida porque COCO corre más seguido mientras
     // haya algo sin confirmar (COCO_CHECK_FAST_MS).
-    const personaVerificada = !hayVerificador
+    const personaVerificada = !esMano && (!hayVerificador
       || (now - (p.track.lastConfirmedPerson || 0)) <= FALL_CONFIRM_WINDOW_MS
-      || (verificadorSinNadieHaceMucho && !!p.track.lastConfirmedPerson);
-    const personaFuerte = !hayVerificador || (personaVerificada && (p.track.lastConfirmedScore || 0) >= COCO_SCORE_ALERTA);
+      || (verificadorSinNadieHaceMucho && !!p.track.lastConfirmedPerson));
+    const personaFuerte = !esMano && (!hayVerificador || (personaVerificada && (p.track.lastConfirmedScore || 0) >= COCO_SCORE_ALERTA));
     if (evidenciaDeCuerpoReal(pose)) p.track.lastBodyEvidenceAt = now;
     const cuerpoRealConfirmado = (now - (p.track.lastBodyEvidenceAt || 0)) <= FALL_CONFIRM_WINDOW_MS;
 
@@ -864,7 +878,7 @@ function processFrame({ source, w, h }) {
   const fallen = list.filter((p) => p.lying);
   const touching = list.filter((p) => p.res.touching);
   if (!list.length) {
-    if (now - lastNoPerson > 1000) { setStatus('warn', `Buscando personas… · COCO ${cocoUltimoPuntaje.toFixed(2)}`); lastNoPerson = now; }
+    if (now - lastNoPerson > 1000) { setStatus('warn', `Buscando personas… · COCO ${cocoUltimoPuntaje.toFixed(2)}${now - manoRechazadaAt < 2000 ? ' · mano (no es persona)' : ''}`); lastNoPerson = now; }
   } else if (fallen.length) {
     setStatus('alert', `${fallen.map((p) => `Persona ${p.id}`).join(', ')} en el suelo · ${cuantas}`);
   } else if (touching.length) {
