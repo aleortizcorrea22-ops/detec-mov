@@ -5,7 +5,7 @@ import { setupInstallButton } from './install.js';
 // Visible en pantalla (junto al nombre) para confirmar de un vistazo si el celular/PC ya
 // tiene la versión más nueva, sin tener que abrir herramientas de desarrollador. Se sube
 // junto con el VERSION de sw.js en cada cambio.
-const APP_VERSION = 'v80';
+const APP_VERSION = 'v81';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo, loadLicenciaConfig } from './licencia.js';
 import { iniciarPanelAdmin, NOMBRE_ADMIN_SECRETO } from './admin-panel.js';
@@ -315,7 +315,9 @@ async function loadModels() {
       objectDetector = await createWithFallback(mp.ObjectDetector, {
         baseOptions: { modelAssetPath: modelUrl('object') },
         runningMode: 'VIDEO',
-        scoreThreshold: 0.35,
+        // Medido en el navegador: persona real ~0.57, fantasmas (escritorio, silla, monitor)
+        // como máximo 0.08. 0.2 da margen para personas chicas/sentadas/con poca luz.
+        scoreThreshold: 0.2,
         maxResults: 8,
         categoryAllowlist: ['person'],
       });
@@ -791,7 +793,7 @@ function processFrame({ source, w, h }) {
       // `res.touching` es lo que se usa en todos lados (overlay, estado, alerta): ya
       // incluye estos gates, para no mostrar "CABEZA" en pantalla por algo que de todas
       // formas no iba a avisar.
-      res = { ...resCrudo, touching: resCrudo.touching && cuerpoRealConfirmado && brazoVinoDeAbajo };
+      res = { ...resCrudo, touching: resCrudo.touching && cuerpoRealConfirmado && personaVerificada && brazoVinoDeAbajo };
       touchState = p.track.touch.update(res.touching, now);
     } else {
       res = { touching: false, zone: null, closest: null, via: null, side: null };
@@ -832,8 +834,8 @@ function processFrame({ source, w, h }) {
     // Se exige mantenerse confirmada un ratito (PERSON_STABLE_MS) antes de dibujarse en
     // pantalla o avisar nada — una persona real se mantiene mucho más que eso.
     if (personaConfirmadaAhora) { if (!p.track.estableDesde) p.track.estableDesde = now; } else { p.track.estableDesde = null; }
-    const personaConfirmada = p.track.estableDesde !== null && (now - p.track.estableDesde) >= PERSON_STABLE_MS;
-    const eventosConfirmados = personaConfirmada ? act.events : [];
+    const personaConfirmada = personaVerificada && p.track.estableDesde !== null && (now - p.track.estableDesde) >= PERSON_STABLE_MS;
+    const eventosConfirmados = personaConfirmada && personaVerificada ? act.events : [];
     return { id: p.id, track: p.track, pose, hands: handsByPose[p.index], res, touchState, lying, fallState, box: poseBox(pose, w, h),
       personaConfirmada, posture: act.posture, walking: act.walking, inBed: act.lyingNow && act.inBed, events: eventosConfirmados,
       zoneEnterCount: act.zoneEnterCount, zoneExitCount: act.zoneExitCount, zoneLastSide: act.zoneLastSide, zoneElapsedS: Math.round(act.zoneElapsedMs / 1000) };
