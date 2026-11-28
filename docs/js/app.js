@@ -5,7 +5,7 @@ import { setupInstallButton } from './install.js';
 // Visible en pantalla (junto al nombre) para confirmar de un vistazo si el celular/PC ya
 // tiene la versión más nueva, sin tener que abrir herramientas de desarrollador. Se sube
 // junto con el VERSION de sw.js en cada cambio.
-const APP_VERSION = 'v91';
+const APP_VERSION = 'v92';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo, loadLicenciaConfig } from './licencia.js';
 import { iniciarPanelAdmin, NOMBRE_ADMIN_SECRETO } from './admin-panel.js';
@@ -1076,8 +1076,10 @@ function drawPerson(w, h, { id, pose, hands, res, lying, box, posture, walking, 
   if (box) {
     // La postura/estado solo se escribe si el usuario tiene alguna actividad tildada: si no,
     // "sentada"/"parada" sobre el dibujo parece una alarma que nadie pidió.
-    const mostrarEstado = ACTIVITY_KEYS.some((k) => settings[k]);
-    const estado = !mostrarEstado ? '' : inBed ? 'en la cama' : walking ? 'caminando' : posture === 'sentada' ? 'sentada' : posture === 'parada' ? 'parada' : '';
+    // Solo las casillas de POSTURA cuentan: tildar "se acostó/levantó de la cama" no tiene que hacer
+    // aparecer "sentada" ni "parada" sobre el dibujo.
+    const mostrarEstado = ['alertSento', 'alertLevanto', 'alertCamina', 'alertQuieta'].some((k) => settings[k]);
+    const estado = inBed ? 'en la cama' : !mostrarEstado ? '' : walking ? 'caminando' : posture === 'sentada' ? 'sentada' : posture === 'parada' ? 'parada' : '';
     const label = lying ? `Persona ${id} · EN EL SUELO` : res.touching ? `Persona ${id} · CABEZA` : estado ? `Persona ${id} · ${estado}` : `Persona ${id}`;
     const fs = Math.max(14, Math.round(w / 45));
     octx.font = `bold ${fs}px system-ui, sans-serif`;
