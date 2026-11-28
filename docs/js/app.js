@@ -5,7 +5,7 @@ import { setupInstallButton } from './install.js';
 // Visible en pantalla (junto al nombre) para confirmar de un vistazo si el celular/PC ya
 // tiene la versión más nueva, sin tener que abrir herramientas de desarrollador. Se sube
 // junto con el VERSION de sw.js en cada cambio.
-const APP_VERSION = 'v78';
+const APP_VERSION = 'v79';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo, loadLicenciaConfig } from './licencia.js';
 import { iniciarPanelAdmin, NOMBRE_ADMIN_SECRETO } from './admin-panel.js';
@@ -1523,9 +1523,17 @@ els.startBtn.addEventListener('click', async (ev) => {
     return;
   }
   // La primera vez que alguien toca Iniciar, se pide el nombre del equipo (en modo automático no se pregunta).
+  // Blindado: en una PWA instalada, o en una ventana en "modo app", el navegador puede no
+  // soportar prompt() y tirar error — sin este try/catch, ESO CORTABA TODA LA VIGILANCIA
+  // ahí mismo, antes de llegar siquiera a abrir la cámara. Si falla, sigue con el nombre
+  // que ya tenía (o el generado automático) y no vuelve a intentar preguntar en este equipo.
   if (ev.isTrusted && !settings.deviceNameAsked) {
-    const n = prompt('¿Cómo se llama este equipo? Así aparece en cada aviso de Telegram.\n(Por ejemplo: Equipo 1 · Dormitorio)', deviceName());
-    if (n && n.trim()) settings.deviceName = n.trim().slice(0, 40);
+    try {
+      const n = prompt('¿Cómo se llama este equipo? Así aparece en cada aviso de Telegram.\n(Por ejemplo: Equipo 1 · Dormitorio)', deviceName());
+      if (n && n.trim()) settings.deviceName = n.trim().slice(0, 40);
+    } catch (e) {
+      console.warn('No se pudo preguntar el nombre del equipo (prompt no soportado en esta ventana):', e);
+    }
     settings.deviceNameAsked = true;
     saveSettings();
     els.deviceName.value = deviceName();
