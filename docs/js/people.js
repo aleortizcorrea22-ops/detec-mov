@@ -377,7 +377,19 @@ export function brazoLevantado(pose, w, h) {
     }
     if (!escala || escala < 2) return false;
     // Mano bien por encima del hombro (no solo un poco, para no confundir con un gesto chico).
-    return (shP.y - wrP.y) > 0.5 * escala;
+    if ((shP.y - wrP.y) <= 0.5 * escala) return false;
+    // Si se ve el codo, tiene que estar en el medio (entre el hombro y la muñeca, en
+    // altura): así se confirma un brazo de verdad estirado hacia arriba, no una muñeca
+    // "adivinada" en cualquier lado sin un codo real que la conecte con el hombro. Si no
+    // se ve el codo, no se puede confirmar esto, pero tampoco se penaliza (igual que el
+    // resto del código: sin evidencia, no se arriesga, pero tampoco se castiga lo que no
+    // se puede ver).
+    if (vis(el)) {
+      const elP = px(el, w, h);
+      const margen = 0.35 * escala;
+      if (elP.y < wrP.y - margen || elP.y > shP.y + margen) return false;
+    }
+    return true;
   };
   return lado(P.L_SHOULDER, P.L_ELBOW, P.L_WRIST) || lado(P.R_SHOULDER, P.R_ELBOW, P.R_WRIST);
 }
