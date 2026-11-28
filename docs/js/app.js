@@ -1,11 +1,11 @@
 import { evaluateFrame, P, manoAbajo } from './rules.js';
-import { PeopleTracker, assignHands, poseBox, filtrarPosesDuplicadas, zonePoints, evidenciaDeCuerpoReal, brazoLevantado, manoNoPersona, eventosPendientes } from './people.js';
+import { PeopleTracker, assignHands, poseBox, filtrarPosesDuplicadas, zonePoints, evidenciaDeCuerpoReal, brazoLevantado, manoNoPersona, eventosPendientes, enZonaCama } from './people.js';
 import { setupInstallButton } from './install.js';
 
 // Visible en pantalla (junto al nombre) para confirmar de un vistazo si el celular/PC ya
 // tiene la versión más nueva, sin tener que abrir herramientas de desarrollador. Se sube
 // junto con el VERSION de sw.js en cada cambio.
-const APP_VERSION = 'v89';
+const APP_VERSION = 'v90';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo, loadLicenciaConfig } from './licencia.js';
 import { iniciarPanelAdmin, NOMBRE_ADMIN_SECRETO } from './admin-panel.js';
@@ -46,7 +46,7 @@ const els = {
   deviceName: $('deviceName'), deviceNameShowBtn: $('deviceNameShowBtn'), maxPeople: $('maxPeople'), detectFalls: $('detectFalls'), fallHoldS: $('fallHoldS'),
   fallVal: $('fallVal'), fallHoldField: $('fallHoldField'),
   alertSento: $('alertSento'), alertLevanto: $('alertLevanto'), alertCamaEntra: $('alertCamaEntra'), alertCamaSale: $('alertCamaSale'),
-  alertCamina: $('alertCamina'), alertQuieta: $('alertQuieta'), alertPideAyuda: $('alertPideAyuda'), bedMarkBtn: $('bedMarkBtn'), bedClearBtn: $('bedClearBtn'), bedInfo: $('bedInfo'),
+  alertCamina: $('alertCamina'), alertQuieta: $('alertQuieta'), alertPideAyuda: $('alertPideAyuda'), modoCama: $('modoCama'), bedMarkBtn: $('bedMarkBtn'), bedClearBtn: $('bedClearBtn'), bedInfo: $('bedInfo'),
   watchZoneEnter: $('watchZoneEnter'), watchZoneExit: $('watchZoneExit'), watchZoneInside: $('watchZoneInside'), watchZoneOutside: $('watchZoneOutside'),
   watchZoneMarkBtn: $('watchZoneMarkBtn'), watchZoneClearBtn: $('watchZoneClearBtn'), watchZoneResetBtn: $('watchZoneResetBtn'), watchZoneInfo: $('watchZoneInfo'), watchZoneLive: $('watchZoneLive'),
   watchDwellInS: $('watchDwellInS'), watchDwellInVal: $('watchDwellInVal'), watchDwellInUnit: $('watchDwellInUnit'),
@@ -62,7 +62,7 @@ const DEFAULTS = {
   deviceName: '', deviceNameAsked: false, maxPeople: 3, alertCabeza: true, detectFalls: true, fallHoldS: 3,
   // Actividades: siempre se anotan en Eventos; a Telegram solo si se activa cada una.
   alertSento: false, alertLevanto: false, alertCamaEntra: false, alertCamaSale: false, alertCamina: false, alertQuieta: false, alertPideAyuda: false,
-  bedZones: [],
+  bedZones: [], modoCama: true,
   watchZoneEnter: false, watchZoneExit: false, watchZoneInside: false, watchZoneOutside: false,
   watchZones: [], watchDwellInS: 10, watchDwellInUnit: 's', watchDwellOutS: 30, watchDwellOutUnit: 's',
   // Contadores de entradas/salidas: NO van dentro del seguimiento de cada persona (eso se
@@ -103,7 +103,7 @@ function bindSettings() {
   els.holdMs.value = settings.holdMs;
   els.cooldownS.value = settings.cooldownS;
   els.model.value = settings.model;
-  for (const k of ['includeFace', 'useHands', 'sendPhoto', 'beep', 'drawSkeleton', 'mirror', 'liveWebrtc', 'alertCabeza', 'detectFalls', 'watchZoneEnter', 'watchZoneExit', 'watchZoneInside', 'watchZoneOutside', ...ACTIVITY_KEYS]) els[k].checked = settings[k];
+  for (const k of ['includeFace', 'useHands', 'sendPhoto', 'beep', 'drawSkeleton', 'mirror', 'liveWebrtc', 'alertCabeza', 'detectFalls', 'modoCama', 'watchZoneEnter', 'watchZoneExit', 'watchZoneInside', 'watchZoneOutside', ...ACTIVITY_KEYS]) els[k].checked = settings[k];
   els.deviceName.value = deviceName();
   els.maxPeople.value = settings.maxPeople;
   els.fallHoldS.value = settings.fallHoldS;
@@ -163,6 +163,8 @@ function bindSettings() {
   on(els.liveWebrtc, 'liveWebrtc');
   on(els.alertCabeza, 'alertCabeza');
   on(els.detectFalls, 'detectFalls');
+  on(els.modoCama, 'modoCama');
+  els.modoCama.addEventListener('change', aplicarUmbralesPose);
   for (const k of ACTIVITY_KEYS) on(els[k], k);
   setupBedZones();
   setupWatchZone();
@@ -281,6 +283,23 @@ function modelUrl(key) {
   return `models/${MODEL_URLS[key].split('/').pop()}`;
 }
 
+// MODO CAMA (casilla "modoCama", activada por defecto, guardada en cada vigía). Solo actúa si
+// hay una cama marcada. Dentro de la cama: el modelo de pose acepta esqueletos con menos
+// confianza y COCO confirma con un puntaje más bajo y más memoria, porque una persona acostada,
+// tapada y de noche casi nunca llega a los puntajes de una persona de pie. Medido sobre el video
+// real de un cuarto: persona acostada COCO 0.2-0.8; esqueleto fantasma sobre una manta ~0.1-0.2.
+const POSE_CONF_NORMAL = 0.5;
+const POSE_CONF_CAMA = 0.15;
+function modoCamaActivo() { return !!settings.modoCama && Array.isArray(settings.bedZones) && settings.bedZones.length > 0; }
+function umbralPose() { return modoCamaActivo() ? POSE_CONF_CAMA : POSE_CONF_NORMAL; }
+function aplicarUmbralesPose() {
+  if (!poseLandmarker) return;
+  try {
+    const u = umbralPose();
+    poseLandmarker.setOptions({ minPoseDetectionConfidence: u, minPosePresenceConfidence: u });
+  } catch (e) { console.warn('No se pudo ajustar la sensibilidad de la pose', e); }
+}
+
 async function loadModels() {
   setStatus('warn', 'Cargando modelos de detección…');
   if (hasBackend === null) await detectBackend();
@@ -295,8 +314,8 @@ async function loadModels() {
       baseOptions: { modelAssetPath: modelUrl(MODEL_URLS[settings.model] ? settings.model : 'full') },
       runningMode: 'VIDEO',
       numPoses: Math.min(6, Math.max(1, Number(settings.maxPeople) || 1)),
-      minPoseDetectionConfidence: 0.5,
-      minPosePresenceConfidence: 0.5,
+      minPoseDetectionConfidence: umbralPose(),
+      minPosePresenceConfidence: umbralPose(),
       minTrackingConfidence: 0.4,
     });
   }
@@ -666,6 +685,17 @@ const PERSON_STABLE_MS = 400;
 // tienen perfecta — se midió.
 const COCO_SCORE_MIN = 0.5;
 const COCO_SCORE_ALERTA = 0.5;
+// Dentro de la cama marcada (modo cama) se confirma con el PROMEDIO MÓVIL de los puntajes de COCO
+// (no con aciertos seguidos: el puntaje de alguien acostado oscila y una sola baja rompía todo).
+// Medido: fantasmas sobre mantas, lámpara y sillas hasta 0.21; persona acostada real 0.2-0.8.
+const COCO_SCORE_CAMA = 0.3; // para ENTRAR (confirmar a alguien nuevo en la cama)
+const COCO_SCORE_CAMA_MANTENER = 0.18; // histéresis: ya confirmada, se mantiene mientras el promedio no baje de acá
+const COCO_CHECKS_CAMA = 3; // mínimo de chequeos antes de confirmar
+// Acostada, el modelo de pose arma un esqueleto deformado (dice 'sentada' estando acostada, inventa
+// brazos levantados): las actividades que dependen de la postura o del brazo no se avisan dentro
+// de la cama. Siguen activos: detectar a la persona, el toque de cabeza y los avisos de zona/cama.
+const EVENTOS_SOLO_DE_PIE = ['pide_ayuda', 'sento', 'levanto', 'camina', 'quieta'];
+const CAMA_CONFIRM_WINDOW_MS = 15000; // alguien acostado no se va de golpe: más memoria
 const COCO_CHECK_FAST_MS = 250; // seguimiento todavía sin confirmar
 const COCO_CHECK_SLOW_MS = 1000; // seguimiento ya confirmado
 const COCO_CROP_MAX = 400; // lado máximo del recorte: el modelo lo achica a 320 igual
@@ -746,20 +776,35 @@ function processFrame({ source, w, h }) {
     if (manoNoPersona(pose, hands, w, h)) {
       p.track.manoVistaAt = now;
       p.track.cocoHits = 0;
+      p.track.cocoEma = undefined;
+      p.track.cocoChecks = 0;
       p.track.lastConfirmedPerson = 0;
       p.track.lastConfirmedScore = 0;
       manoRechazadaAt = now;
     }
     const esMano = (now - (p.track.manoVistaAt || 0)) <= MANO_BLOQUEO_MS;
+    // Modo cama: con la casilla activa y la parte de arriba del cuerpo adentro de una cama marcada.
+    const enCama = modoCamaActivo() && enZonaCama(pose, w, h, settings.bedZones);
+    const ventanaConf = enCama ? CAMA_CONFIRM_WINDOW_MS : FALL_CONFIRM_WINDOW_MS;
     if (!esMano && objectDetector && !objectDetectorFailed) {
-      const yaConfirmado = (now - (p.track.lastConfirmedPerson || 0)) <= FALL_CONFIRM_WINDOW_MS;
+      const yaConfirmado = (now - (p.track.lastConfirmedPerson || 0)) <= ventanaConf;
       if (!cropEnEstaPasada && now - (p.track.cocoAt || 0) >= (yaConfirmado ? COCO_CHECK_SLOW_MS : COCO_CHECK_FAST_MS)) {
         cropEnEstaPasada = true;
         p.track.cocoAt = now;
         try {
           const sc = puntajePersonaEnRecorte(source, pose, w, h);
           cocoUltimoPuntaje = sc;
-          if (sc >= COCO_SCORE_MIN) {
+          p.track.cocoEma = p.track.cocoEma === undefined ? sc : 0.6 * p.track.cocoEma + 0.4 * sc;
+          p.track.cocoChecks = (p.track.cocoChecks || 0) + 1;
+          if (enCama) {
+            const entra = p.track.cocoChecks >= COCO_CHECKS_CAMA && p.track.cocoEma >= COCO_SCORE_CAMA;
+            const mantiene = yaConfirmado && p.track.cocoEma >= COCO_SCORE_CAMA_MANTENER;
+            if (entra || mantiene) {
+              p.track.lastConfirmedPerson = now;
+              p.track.lastConfirmedScore = p.track.cocoEma;
+              lastAnyConfirmAt = now;
+            }
+          } else if (sc >= COCO_SCORE_MIN) {
             p.track.cocoHits = (p.track.cocoHits || 0) + 1;
             if (p.track.cocoHits >= 2 || yaConfirmado) {
               p.track.lastConfirmedPerson = now;
@@ -791,11 +836,11 @@ function processFrame({ source, w, h }) {
     // Una persona real real se confirma enseguida porque COCO corre más seguido mientras
     // haya algo sin confirmar (COCO_CHECK_FAST_MS).
     const personaVerificada = !esMano && (!hayVerificador
-      || (now - (p.track.lastConfirmedPerson || 0)) <= FALL_CONFIRM_WINDOW_MS
+      || (now - (p.track.lastConfirmedPerson || 0)) <= ventanaConf
       || (verificadorSinNadieHaceMucho && !!p.track.lastConfirmedPerson));
-    const personaFuerte = !esMano && (!hayVerificador || (personaVerificada && (p.track.lastConfirmedScore || 0) >= COCO_SCORE_ALERTA));
+    const personaFuerte = !esMano && (!hayVerificador || (personaVerificada && (p.track.lastConfirmedScore || 0) >= (enCama ? COCO_SCORE_CAMA_MANTENER : COCO_SCORE_ALERTA)));
     if (evidenciaDeCuerpoReal(pose)) p.track.lastBodyEvidenceAt = now;
-    const cuerpoRealConfirmado = (now - (p.track.lastBodyEvidenceAt || 0)) <= FALL_CONFIRM_WINDOW_MS;
+    const cuerpoRealConfirmado = (now - (p.track.lastBodyEvidenceAt || 0)) <= ventanaConf;
 
     // Toque de cabeza: casilla que se puede apagar (activada por defecto, es la detección
     // original del proyecto). Si está apagada, directamente no se analiza nada de esto
@@ -867,9 +912,9 @@ function processFrame({ source, w, h }) {
     // pantalla o avisar nada — una persona real se mantiene mucho más que eso.
     if (personaConfirmadaAhora) { if (!p.track.estableDesde) p.track.estableDesde = now; } else { p.track.estableDesde = null; }
     const personaConfirmada = personaVerificada && p.track.estableDesde !== null && (now - p.track.estableDesde) >= PERSON_STABLE_MS;
-    const eventosConfirmados = eventosPendientes(p.track.pendingEv ??= {}, act.events, now, personaConfirmada && personaFuerte, (e) => e === 'pide_ayuda' && res.touching);
+    const eventosConfirmados = eventosPendientes(p.track.pendingEv ??= {}, enCama ? act.events.filter((e) => !EVENTOS_SOLO_DE_PIE.includes(e)) : act.events, now, personaConfirmada && personaFuerte, (e) => e === 'pide_ayuda' && res.touching);
     return { id: p.id, track: p.track, pose, hands: handsByPose[p.index], res, touchState, lying, fallState, box: poseBox(pose, w, h),
-      personaConfirmada, brazoArriba: act.brazoAhora, posture: act.posture, walking: act.walking, inBed: act.lyingNow && act.inBed, events: eventosConfirmados,
+      personaConfirmada, brazoArriba: act.brazoAhora, posture: act.posture, walking: act.walking, inBed: enCama || (act.lyingNow && act.inBed), events: eventosConfirmados,
       zoneEnterCount: act.zoneEnterCount, zoneExitCount: act.zoneExitCount, zoneLastSide: act.zoneLastSide, zoneElapsedS: Math.round(act.zoneElapsedMs / 1000) };
   }).filter((p) => p.personaConfirmada); // sin confirmación estable, ni se dibuja ni se avisa nada: es como si no estuviera
 
@@ -885,13 +930,13 @@ function processFrame({ source, w, h }) {
   const fallen = list.filter((p) => p.lying);
   const touching = list.filter((p) => p.res.touching);
   if (!list.length) {
-    if (now - lastNoPerson > 1000) { setStatus('warn', `Buscando personas… · COCO ${cocoUltimoPuntaje.toFixed(2)} · manos ${manosVistas}${now - manoRechazadaAt < 2000 ? ' · mano (no es persona)' : ''}`); lastNoPerson = now; }
+    if (now - lastNoPerson > 1000) { setStatus('warn', `Buscando personas… · COCO ${cocoUltimoPuntaje.toFixed(2)} · manos ${manosVistas}${modoCamaActivo() ? ' · modo cama' : ''}${now - manoRechazadaAt < 2000 ? ' · mano (no es persona)' : ''}`); lastNoPerson = now; }
   } else if (fallen.length) {
     setStatus('alert', `${fallen.map((p) => `Persona ${p.id}`).join(', ')} en el suelo · ${cuantas}`);
   } else if (touching.length) {
     setStatus('alert', `${touching.map((p) => `Persona ${p.id}`).join(', ')}: mano en la cabeza · ${cuantas}`);
   } else {
-    setStatus('ok', `Vigilando · ${cuantas} · COCO ${cocoUltimoPuntaje.toFixed(2)} · manos ${manosVistas}${settings.alertPideAyuda ? ` · brazo ${list.some((p) => p.brazoArriba) ? 'ARRIBA' : 'abajo'}` : ''}`);
+    setStatus('ok', `Vigilando · ${cuantas} · COCO ${cocoUltimoPuntaje.toFixed(2)} · manos ${manosVistas}${modoCamaActivo() ? ' · modo cama' : ''}${settings.alertPideAyuda ? ` · brazo ${list.some((p) => p.brazoArriba) ? 'ARRIBA' : 'abajo'}` : ''}`);
   }
 
   frames++;
@@ -1192,6 +1237,7 @@ function setupBedZones() {
     if (!bedMarking || !bedDraft || bedDraft.length < 3) return;
     settings.bedZones = [...settings.bedZones, { pts: bedDraft }].slice(-3);
     saveSettings();
+    aplicarUmbralesPose();
     stopMarking();
     addLog('Cama marcada');
   });
@@ -1199,6 +1245,7 @@ function setupBedZones() {
     if (!confirm('¿Borrar todas las camas marcadas?')) return;
     settings.bedZones = [];
     saveSettings();
+    aplicarUmbralesPose();
     refreshBedInfo();
   });
   viewer.addEventListener('pointerdown', (ev) => {

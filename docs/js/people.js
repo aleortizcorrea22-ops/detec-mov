@@ -339,6 +339,23 @@ export function inZones(pt, zones, w, h) {
   return (zones || []).some((z) => pointInPolygon(pt, zonePoints(z).map((p) => ({ x: p.x * w, y: p.y * h }))));
 }
 
+/** Centro de la parte de arriba del cuerpo (cara y hombros) en píxeles, o null si se ven
+ * menos de 2 de esos puntos. Sirve para saber si alguien está en la cama sin depender de las
+ * caderas, que de noche y tapado casi nunca se ven. */
+export function centroSuperior(pose, w, h) {
+  const pts = [P.NOSE, P.L_EYE, P.R_EYE, P.L_EAR, P.R_EAR, P.L_SHOULDER, P.R_SHOULDER]
+    .map((i) => pose[i]).filter(vis).map((l) => px(l, w, h));
+  if (pts.length < 2) return null;
+  return { x: pts.reduce((a, p) => a + p.x, 0) / pts.length, y: pts.reduce((a, p) => a + p.y, 0) / pts.length };
+}
+
+/** ¿La parte de arriba de este cuerpo (cara y hombros) cae dentro de alguna cama marcada? */
+export function enZonaCama(pose, w, h, zonas) {
+  if (!zonas?.length) return false;
+  const c = centroSuperior(pose, w, h);
+  return !!c && inZones(c, zonas, w, h);
+}
+
 /** ¿Por qué lado del recuadro de la zona está más cerca el punto? (para decir "entró por la
  * derecha", etc.). pt y zone en las mismas unidades (0..1 de la imagen). */
 export function ladoDeZona(pt, zone) {
