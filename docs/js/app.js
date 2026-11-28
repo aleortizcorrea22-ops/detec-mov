@@ -5,7 +5,7 @@ import { setupInstallButton } from './install.js';
 // Visible en pantalla (junto al nombre) para confirmar de un vistazo si el celular/PC ya
 // tiene la versión más nueva, sin tener que abrir herramientas de desarrollador. Se sube
 // junto con el VERSION de sw.js en cada cambio.
-const APP_VERSION = 'v79';
+const APP_VERSION = 'v80';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo, loadLicenciaConfig } from './licencia.js';
 import { iniciarPanelAdmin, NOMBRE_ADMIN_SECRETO } from './admin-panel.js';
@@ -780,14 +780,18 @@ function processFrame({ source, w, h }) {
       const brazoVinoDeAbajo = (now - (p.track.lastHandDownAt || 0)) <= HAND_RISE_WINDOW_MS;
 
       // Además de la forma de la cabeza/cara (ya la valida evaluateFrame), tiene que
-      // tratarse de una persona confirmada por el verificador, con evidencia real de
-      // cuerpo (no una mano sola haciéndose pasar por alguien tocándose la cabeza), y con
-      // el brazo habiendo subido de verdad desde abajo.
+      // tratarse de una persona con evidencia real de cuerpo (no una mano sola
+      // haciéndose pasar por alguien tocándose la cabeza) y con el brazo habiendo
+      // subido de verdad desde abajo. El verificador de persona (COCO) NO se exige acá:
+      // es un modelo liviano que en muchos celulares/luces reales casi nunca confirma a
+      // nadie, y exigirlo para TODO dejaba la detección general demasiado dura. Queda
+      // reservado solo para la caída (la alerta más grave), donde vale la pena esa
+      // exigencia extra — ver más abajo.
       const resCrudo = evaluateFrame(pose, handsByPose[p.index], w, h, { sensitivity: settings.sensitivity, includeFace: settings.includeFace });
       // `res.touching` es lo que se usa en todos lados (overlay, estado, alerta): ya
       // incluye estos gates, para no mostrar "CABEZA" en pantalla por algo que de todas
       // formas no iba a avisar.
-      res = { ...resCrudo, touching: resCrudo.touching && personaVerificada && cuerpoRealConfirmado && brazoVinoDeAbajo };
+      res = { ...resCrudo, touching: resCrudo.touching && cuerpoRealConfirmado && brazoVinoDeAbajo };
       touchState = p.track.touch.update(res.touching, now);
     } else {
       res = { touching: false, zone: null, closest: null, via: null, side: null };
@@ -815,12 +819,13 @@ function processFrame({ source, w, h }) {
     const lying = settings.detectFalls && act.lyingNow && !act.inBed && act.huboPosturaNormalAntes
       && personaVerificada && transicionBrusca && cuerpoRealConfirmado;
     const fallState = settings.detectFalls ? p.track.fall.update(lying, now) : 'idle';
-    // Todas las alertas de ESTA persona (toque, caída, y cada actividad: se sentó, se
-    // levantó, caminó, zona, pidió ayuda) exigen lo mismo: primero confirmar que es una
-    // persona de verdad (verificador + evidencia de cuerpo), y recién ahí avisar lo que
-    // hizo. Sin esa confirmación reciente, no se informa ningún evento de actividad
-    // (aunque la postura cruda haya cambiado), para no avisar de un objeto cualquiera.
-    const personaConfirmadaAhora = personaVerificada && cuerpoRealConfirmado;
+    // Todas las alertas de ESTA persona (toque, y cada actividad: se sentó, se levantó,
+    // caminó, zona, pidió ayuda) exigen lo mismo: primero confirmar que es una persona de
+    // verdad (evidencia real de cuerpo: cara u ojos/nariz, o pierna de confianza alta), y
+    // recién ahí avisar lo que hizo. El verificador de persona (COCO) no se exige acá (ver
+    // nota de más arriba) — solo para la caída, más abajo. Sin esta confirmación
+    // reciente, no se informa ningún evento (aunque la postura cruda haya cambiado).
+    const personaConfirmadaAhora = cuerpoRealConfirmado;
     // ESTABILIDAD: no alcanza con confirmarse en UN cuadro suelto — con la cámara en
     // movimiento (al mover el celular de un lado a otro), el modelo puede "alucinar" algo
     // así por una fracción de segundo (desenfoque de movimiento) y desaparece enseguida.
