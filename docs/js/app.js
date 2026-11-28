@@ -5,7 +5,7 @@ import { setupInstallButton } from './install.js';
 // Visible en pantalla (junto al nombre) para confirmar de un vistazo si el celular/PC ya
 // tiene la versión más nueva, sin tener que abrir herramientas de desarrollador. Se sube
 // junto con el VERSION de sw.js en cada cambio.
-const APP_VERSION = 'v102';
+const APP_VERSION = 'v103';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo, loadLicenciaConfig } from './licencia.js';
 import { aplicarConfigRemota, CLAVES_REMOTAS } from './config-remota.js';
@@ -1007,7 +1007,9 @@ function processFrame({ source, w, h }) {
       res = { ...resCrudo, touching: enCama
         // En la cama el esqueleto NO sirve (amontona los puntos cerca de la cabeza aunque los brazos estén
         // abajo: daba avisos falsos "(mano derecha)"): solo cuenta el brazo moviéndose cerca de la cabeza.
-        ? (movCabeza && (personaFuerte || porMovimiento))
+        // v103: el movimiento solo NO prueba que haya una persona (con la cama vacia un "fantasma" + un cambio de
+        // imagen daba avisos falsos): hace falta que COCO la haya confirmado en los ultimos segundos.
+        ? (movCabeza && personaFuerte)
         : (resCrudo.touching && cuerpoRealConfirmado && personaFuerte && brazoVinoDeAbajo && !brazoAlto) };
       touchState = p.track.touch.update(res.touching, now, enCama);
     } else {
