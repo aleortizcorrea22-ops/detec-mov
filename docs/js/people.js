@@ -425,17 +425,44 @@ export function fraccionCambiada(cur, prev, sw, sh, cx, cy, radio, umbralDif = 1
 }
 
 /**
+ * Movimiento por zonas entre dos cuadros (RGBA): `cabeza` = círculo alrededor de la cabeza, `torso` =
+ * círculo alrededor de los hombros (sin lo que ya cuenta como cabeza) y `fuera` = el resto del cuadro
+ * de la parte de abajo del 30 %, lejos de las dos zonas. Un brazo que se rasca mueve la cabeza pero
+ * deja el torso quieto; sentarse o girar mueve las dos.
+ */
+export function movimientoRegiones(cur, prev, sw, sh, cab, tor, umbralDif = 14) {
+  let c = 0; let nc = 0; let t = 0; let nt = 0; let f = 0; let nf = 0;
+  const lejos = Math.max(cab.r, tor.r) * 2.2;
+  for (let y = 0; y < sh; y++) {
+    for (let x = 0; x < sw; x++) {
+      const dc = Math.hypot(x - cab.x, y - cab.y);
+      const dt = Math.hypot(x - tor.x, y - tor.y);
+      const enCab = dc <= cab.r;
+      const enTor = !enCab && dt <= tor.r;
+      const enFuera = dc > lejos && dt > lejos && y > sh * 0.3;
+      if (!enCab && !enTor && !enFuera) continue;
+      const k = (y * sw + x) * 4;
+      const dif = (Math.abs(cur[k] - prev[k]) + Math.abs(cur[k + 1] - prev[k + 1]) + Math.abs(cur[k + 2] - prev[k + 2])) / 3;
+      const cambio = dif > umbralDif ? 1 : 0;
+      if (enCab) { c += cambio; nc++; } else if (enTor) { t += cambio; nt++; } else { f += cambio; nf++; }
+    }
+  }
+  return { cabeza: nc ? c / nc : 0, torso: nt ? t / nt : 0, fuera: nf ? f / nf : 0 };
+}
+
+/**
  * ¿Hay movimiento SOSTENIDO cerca de la cabeza? `hist` = [{t, s, f}] (s = movimiento cerca de la
  * cabeza, f = movimiento afuera). Se queda con los últimos 3 s (modifica el arreglo). Cuenta como
  * movimiento una muestra con s >= umbral y concentrada (s >= concentrado veces lo de afuera); hace
  * falta una fracción de las muestras de la ventana, y un mínimo de muestras, para que un instante
  * suelto (un giro de cabeza, un cambio de luz) no alcance.
  */
-export function movimientoSostenido(hist, now, { ventanaMs = 1500, umbral = 0.03, fraccion = 0.6, minMuestras = 3, concentrado = 3 } = {}) {
+export function movimientoSostenido(hist, now, { ventanaMs = 2000, umbral = 0.03, fraccion = 0.7, minMuestras = 4, concentrado = 3, torsoMax = 0.4, fueraMax = 0.02 } = {}) {
   while (hist.length && now - hist[0].t > 3000) hist.shift();
   const v = hist.filter((m) => now - m.t <= ventanaMs);
   if (v.length < minMuestras) return false;
-  const con = v.filter((m) => m.s >= umbral && m.s >= concentrado * Math.max(m.f, 0.003)).length;
+  // tor = movimiento del torso (si se midió): un brazo rascándose mueve la cabeza y deja el torso quieto.
+  const con = v.filter((m) => m.s >= umbral && m.s >= concentrado * Math.max(m.f, 0.003) && m.f <= fueraMax && (m.tor === undefined || m.tor <= torsoMax * m.s)).length;
   return con / v.length >= fraccion;
 }
 

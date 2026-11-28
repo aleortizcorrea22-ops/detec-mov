@@ -1,11 +1,11 @@
 import { evaluateFrame, P, manoAbajo } from './rules.js';
-import { PeopleTracker, assignHands, poseBox, filtrarPosesDuplicadas, zonePoints, evidenciaDeCuerpoReal, brazoLevantado, manoNoPersona, eventosPendientes, enZonaCama, iouCajas, zonaDeCaja, fraccionCambiada, movimientoSostenido } from './people.js';
+import { PeopleTracker, assignHands, poseBox, filtrarPosesDuplicadas, zonePoints, evidenciaDeCuerpoReal, brazoLevantado, manoNoPersona, eventosPendientes, enZonaCama, iouCajas, zonaDeCaja, movimientoRegiones, movimientoSostenido } from './people.js';
 import { setupInstallButton } from './install.js';
 
 // Visible en pantalla (junto al nombre) para confirmar de un vistazo si el celular/PC ya
 // tiene la versión más nueva, sin tener que abrir herramientas de desarrollador. Se sube
 // junto con el VERSION de sw.js en cada cambio.
-const APP_VERSION = 'v96';
+const APP_VERSION = 'v97';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo, loadLicenciaConfig } from './licencia.js';
 import { aplicarConfigRemota, CLAVES_REMOTAS } from './config-remota.js';
@@ -791,7 +791,8 @@ function camaAutoCheck(source, w, h, now) {
 // abajo no. Medido en el video en vivo de un cuarto: con el brazo moviéndose sobre la cabeza el
 // cambio es 3-20 % y quieto ~0 %. Hace falta que sea sostenido (1.5 s) y concentrado cerca de la cabeza.
 const MOV_PASO_MS = 200;
-const MOV_RADIO_OJOS = 8;
+const MOV_RADIO_CABEZA = 4.5; // en anchos de ojos: cara + pelo + lo que está pegado a la cabeza
+const MOV_RADIO_TORSO = 5; // alrededor de los hombros
 const movCanvas = document.createElement('canvas');
 const movCtx = movCanvas.getContext('2d', { willReadFrequently: true });
 let movPrev = null;
@@ -824,14 +825,17 @@ function movimientoCabeza(pose, now) {
     const nariz = pose[0];
     const oi = pose[2];
     const od = pose[5];
-    if (nariz && oi && od && (nariz.visibility ?? 0) >= 0.4 && (oi.visibility ?? 0) >= 0.3 && (od.visibility ?? 0) >= 0.3) {
+    const hi = pose[11];
+    const hd = pose[12];
+    if (nariz && oi && od && hi && hd && (nariz.visibility ?? 0) >= 0.4 && (oi.visibility ?? 0) >= 0.3 && (od.visibility ?? 0) >= 0.3
+      && (hi.visibility ?? 0) >= 0.3 && (hd.visibility ?? 0) >= 0.3) {
       const { sw, sh } = movDim;
       const ojo = Math.hypot((oi.x - od.x) * sw, (oi.y - od.y) * sh);
       if (ojo > 2) {
-        const cx = ((nariz.x + oi.x + od.x) / 3) * sw;
-        const cy = ((nariz.y + oi.y + od.y) / 3) * sh;
-        const { dentro, fuera } = fraccionCambiada(movCur, movPrev, sw, sh, cx, cy, ojo * MOV_RADIO_OJOS);
-        movHist.push({ t: now, s: dentro, f: fuera });
+        const cab = { x: ((nariz.x + oi.x + od.x) / 3) * sw, y: ((nariz.y + oi.y + od.y) / 3) * sh, r: ojo * MOV_RADIO_CABEZA };
+        const tor = { x: ((hi.x + hd.x) / 2) * sw, y: ((hi.y + hd.y) / 2) * sh, r: ojo * MOV_RADIO_TORSO };
+        const { cabeza, torso, fuera } = movimientoRegiones(movCur, movPrev, sw, sh, cab, tor);
+        movHist.push({ t: now, s: cabeza, f: fuera, tor: torso });
       }
     }
   }
