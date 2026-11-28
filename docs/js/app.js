@@ -5,7 +5,7 @@ import { setupInstallButton } from './install.js';
 // Visible en pantalla (junto al nombre) para confirmar de un vistazo si el celular/PC ya
 // tiene la versión más nueva, sin tener que abrir herramientas de desarrollador. Se sube
 // junto con el VERSION de sw.js en cada cambio.
-const APP_VERSION = 'v103';
+const APP_VERSION = 'v104';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo, loadLicenciaConfig } from './licencia.js';
 import { aplicarConfigRemota, CLAVES_REMOTAS } from './config-remota.js';
@@ -808,6 +808,7 @@ const MOV_PERSONA_MS = 8000;
 let movConfirmaAt = 0;
 const MOV_RADIO_CABEZA = 4.5; // en anchos de ojos: cara + pelo + lo que está pegado a la cabeza
 const MOV_RADIO_TORSO = 5; // alrededor de los hombros
+const MOV_CARA_HOMBROS_MAX = 1.6; // distancia cara-hombros, en anchos de hombro (v104)
 const movCanvas = document.createElement('canvas');
 const movCtx = movCanvas.getContext('2d', { willReadFrequently: true });
 let movPrev = null;
@@ -849,12 +850,21 @@ function movimientoCabeza(pose, now) {
       if (ojo > 2) {
         const cab = { x: ((nariz.x + oi.x + od.x) / 3) * sw, y: ((nariz.y + oi.y + od.y) / 3) * sh, r: ojo * MOV_RADIO_CABEZA };
         const tor = { x: ((hi.x + hd.x) / 2) * sw, y: ((hi.y + hd.y) / 2) * sh, r: ojo * MOV_RADIO_TORSO };
-        const { cabeza, torso, fuera } = movimientoRegiones(movCur, movPrev, sw, sh, cab, tor);
-        movHist.push({ t: now, s: cabeza, f: fuera, tor: torso });
+        // v104: la cara tiene que estar cerca de los hombros (en anchos de hombros). Acostada de costado el modelo
+        // a veces pone la "cara" sobre las piernas/cadera y ahi cualquier movimiento (respirar, acomodarse) avisaba.
+        // Medido en videos reales con toque de cabeza: cara-hombros entre 0.2 y 1.4 anchos de hombro.
+        const hom = Math.hypot((hi.x - hd.x) * sw, (hi.y - hd.y) * sh);
+        const cabHom = Math.hypot(cab.x - tor.x, cab.y - tor.y) / Math.max(hom, 1);
+        if (cabHom <= MOV_CARA_HOMBROS_MAX) {
+          const { cabeza, torso, fuera } = movimientoRegiones(movCur, movPrev, sw, sh, cab, tor);
+          movHist.push({ t: now, s: cabeza, f: fuera, tor: torso });
+        }
       }
     }
   }
-  return movimientoSostenido(movHist, now);
+  // v104: con los brazos levantados el torso y los costados tambien se mueven (medido: torso ~ igual que la cabeza):
+  // el limite de torso (0.6) descartaba casi todos los toques reales (detectaba 0-39 % del tiempo; con 1.3 y 0.04 sube a 21-77 %).
+  return movimientoSostenido(movHist, now, { torsoMax: 1.3, fueraMax: 0.04 });
 }
 
 function processFrame({ source, w, h }) {
