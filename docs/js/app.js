@@ -1,11 +1,11 @@
 import { evaluateFrame, P } from './rules.js';
-import { PeopleTracker, assignHands, poseBox, filtrarPosesDuplicadas } from './people.js';
+import { PeopleTracker, assignHands, poseBox, filtrarPosesDuplicadas, zonePoints } from './people.js';
 import { setupInstallButton } from './install.js';
 
 // Visible en pantalla (junto al nombre) para confirmar de un vistazo si el celular/PC ya
 // tiene la versión más nueva, sin tener que abrir herramientas de desarrollador. Se sube
 // junto con el VERSION de sw.js en cada cambio.
-const APP_VERSION = 'v64';
+const APP_VERSION = 'v66';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo, loadLicenciaConfig } from './licencia.js';
 import { iniciarPanelAdmin, NOMBRE_ADMIN_SECRETO } from './admin-panel.js';
@@ -631,6 +631,17 @@ let cachedPersonBoxes = null;
 let objSinPersonaDesde = 0;
 let lastDiagLog = 0;
 const OBJ_CHECK_MS = 700;
+// Una CAÍDA es la alerta más grave y la más cara de tener falsa (asusta a la familia).
+// Patrones decorativos repetitivos (ventilador de techo, botones de un respaldo
+// tapizado, una reja) a veces se "completan" como un cuerpo entero por el modelo de
+// pose, con buena confianza en varios puntos. El verificador de persona (COCO) casi
+// nunca va a confirmar "persona" sobre un objeto así, así que exigirle a CADA
+// seguimiento (persona) una confirmación real y reciente del verificador filtra estos
+// casos sin perjudicar a una persona real (que tarde o temprano se confirma).
+// Solo si el verificador lleva MUCHO tiempo sin confirmar a NADIE en todo el cuadro
+// (posible con muy poca luz) se deja de exigir esto, para no tapar una caída real.
+const FALL_CONFIRM_WINDOW_MS = 6000;
+const FALL_VERIFIER_GIVEUP_MS = 20000;
 
 /** ¿El recuadro de esta pose cae adentro (con margen) de algún "person" confirmado
  * por el detector de objetos? Si no hay margen de superposición, no se confía en la pose. */
@@ -710,11 +721,26 @@ function processFrame({ source, w, h }) {
       watchInsideMs: settings.watchZoneInside ? settings.watchDwellInS * UNIT_MS[settings.watchDwellInUnit] : null,
       watchOutsideMs: settings.watchZoneOutside ? settings.watchDwellOutS * UNIT_MS[settings.watchDwellOutUnit] : null,
     });
+    // ¿El verificador de persona (COCO) confirmó a ESTE seguimiento como persona de
+    // verdad hace poco? Si no hay verificador (falló al cargar en este equipo) o lleva
+    // mucho tiempo sin confirmar a NADIE en el cuadro, no se exige esto (ver arriba).
+    if (objectDetector && !objectDetectorFailed && cachedPersonBoxes
+      && poseConfirmadaComoPersona(pose, cachedPersonBoxes, w, h)) {
+      p.track.lastConfirmedPerson = now;
+    }
+    const verificadorUtilizable = objectDetector && !objectDetectorFailed
+      && !(objSinPersonaDesde && now - objSinPersonaDesde > FALL_VERIFIER_GIVEUP_MS);
+    const personaVerificadaParaCaida = !verificadorUtilizable
+      || (now - (p.track.lastConfirmedPerson || 0)) <= FALL_CONFIRM_WINDOW_MS;
+
     // Acostada en una zona marcada como cama no es una caída. Tampoco cuenta si esta
     // persona nunca estuvo parada o sentada antes: una caída real siempre tiene una
     // postura normal previa, así que "nacer" ya acostado (típico de un objeto confundido
-    // con una persona) no alcanza para avisar.
-    const lying = settings.detectFalls && act.lyingNow && !act.inBed && act.huboPosturaNormalAntes;
+    // con una persona) no alcanza para avisar. Tampoco cuenta si el verificador de
+    // persona nunca la confirmó hace poco (típico de un patrón decorativo "completado"
+    // como cuerpo: un ventilador, el tapizado de un respaldo, etc.).
+    const lying = settings.detectFalls && act.lyingNow && !act.inBed && act.huboPosturaNormalAntes
+      && personaVerificadaParaCaida;
     const fallState = settings.detectFalls ? p.track.fall.update(lying, now) : 'idle';
     return { id: p.id, track: p.track, pose, hands: handsByPose[p.index], res, touchState, lying, fallState, box: poseBox(pose, w, h),
       posture: act.posture, walking: act.walking, inBed: act.lyingNow && act.inBed, events: act.events,
@@ -989,25 +1015,54 @@ function toImageCoords(ev) {
   return { x: Math.min(1, Math.max(0, x)), y: Math.min(1, Math.max(0, y)) };
 }
 
+// Radio (en fracción 0..1 del ancho de imagen) para "agarrar" un vértice existente con el dedo.
+const VERTEX_GRAB_R = 0.035;
+// Vértice que se está arrastrando ahora mismo (fuera del modo "marcar"): { zoneIndex, pointIndex }.
+let bedDraggingVertex = null;
+
 function refreshBedInfo() {
   const n = settings.bedZones.length;
   els.bedInfo.textContent = bedMarking
-    ? 'Arrastre el dedo sobre la imagen, de una esquina de la cama a la otra.'
-    : n ? `${n} cama${n > 1 ? 's' : ''} marcada${n > 1 ? 's' : ''}. Acostada ahí = "en la cama" (no es caída).` : 'No hay camas marcadas: si alguien se acuesta, se toma como caída.';
+    ? `Toque cada esquina de la cama en orden (lleva ${bedDraft ? bedDraft.length : 0} punto${bedDraft && bedDraft.length === 1 ? '' : 's'}, mínimo 3) y después toque "Listo".`
+    : n ? `${n} cama${n > 1 ? 's' : ''} marcada${n > 1 ? 's' : ''}. Acostada ahí = "en la cama" (no es caída). Para ajustar la forma, arrastre cualquier vértice (punto) sobre la imagen.` : 'No hay camas marcadas: si alguien se acuesta, se toma como caída.';
   els.bedClearBtn.disabled = !n;
   els.bedMarkBtn.textContent = bedMarking ? 'Cancelar' : '🛏️ Marcar una cama';
+  if (els.bedDoneBtn) {
+    els.bedDoneBtn.hidden = !bedMarking;
+    els.bedDoneBtn.disabled = !bedDraft || bedDraft.length < 3;
+  }
 }
 
 function setupBedZones() {
   if (!Array.isArray(settings.bedZones)) settings.bedZones = [];
+  // Compatibilidad: una cama marcada antes de este cambio (rectángulo {x,y,w,h}) se
+  // convierte a sus 4 vértices la primera vez que se abre esta pantalla, así también se
+  // puede ajustar arrastrando sus puntos.
+  settings.bedZones = settings.bedZones.map((z) => (Array.isArray(z.pts) ? z : { pts: zonePoints(z) }));
   const viewer = els.overlay.parentElement;
+  const startMarking = () => {
+    bedMarking = true;
+    watchMarking = false;
+    bedDraft = [];
+    viewer.classList.toggle('marking', true);
+    refreshBedInfo();
+  };
+  const stopMarking = () => {
+    bedMarking = false;
+    bedDraft = null;
+    viewer.classList.remove('marking');
+    refreshBedInfo();
+  };
   els.bedMarkBtn.addEventListener('click', () => {
     if (!bedMarking && !running) { addLog('Primero toque Iniciar para ver la imagen y después marque la cama.', 'alert'); return; }
-    watchMarking = false; // no se puede marcar las dos cosas a la vez
-    bedMarking = !bedMarking;
-    bedDraft = null;
-    viewer.classList.toggle('marking', bedMarking);
-    refreshBedInfo();
+    if (bedMarking) stopMarking(); else startMarking();
+  });
+  els.bedDoneBtn?.addEventListener('click', () => {
+    if (!bedMarking || !bedDraft || bedDraft.length < 3) return;
+    settings.bedZones = [...settings.bedZones, { pts: bedDraft }].slice(-3);
+    saveSettings();
+    stopMarking();
+    addLog('Cama marcada');
   });
   els.bedClearBtn.addEventListener('click', () => {
     if (!confirm('¿Borrar todas las camas marcadas?')) return;
@@ -1016,51 +1071,88 @@ function setupBedZones() {
     refreshBedInfo();
   });
   viewer.addEventListener('pointerdown', (ev) => {
-    if (!bedMarking) return;
     const p = toImageCoords(ev);
     if (!p) return;
-    ev.preventDefault();
-    viewer.setPointerCapture?.(ev.pointerId);
-    bedDraft = { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
+    if (bedMarking) {
+      // Modo "marcar una cama nueva": cada toque agrega un vértice más.
+      ev.preventDefault();
+      bedDraft.push(p);
+      refreshBedInfo();
+      return;
+    }
+    // Fuera de ese modo: si el toque cae cerca de un vértice de una cama YA marcada,
+    // arrastrarlo para corregir la forma (sin tener que volver a dibujar toda la cama).
+    for (let zi = 0; zi < settings.bedZones.length; zi++) {
+      const pts = settings.bedZones[zi].pts;
+      for (let pi = 0; pi < pts.length; pi++) {
+        if (Math.hypot(pts[pi].x - p.x, pts[pi].y - p.y) <= VERTEX_GRAB_R) {
+          ev.preventDefault();
+          viewer.setPointerCapture?.(ev.pointerId);
+          bedDraggingVertex = { zoneIndex: zi, pointIndex: pi };
+          return;
+        }
+      }
+    }
   });
   viewer.addEventListener('pointermove', (ev) => {
-    if (!bedMarking || !bedDraft) return;
     const p = toImageCoords(ev);
-    if (p) { bedDraft.x1 = p.x; bedDraft.y1 = p.y; }
+    if (!p) return;
+    if (bedDraggingVertex) {
+      settings.bedZones[bedDraggingVertex.zoneIndex].pts[bedDraggingVertex.pointIndex] = p;
+      return;
+    }
   });
-  const finish = () => {
-    if (!bedMarking || !bedDraft) return;
-    const z = { x: Math.min(bedDraft.x0, bedDraft.x1), y: Math.min(bedDraft.y0, bedDraft.y1), w: Math.abs(bedDraft.x1 - bedDraft.x0), h: Math.abs(bedDraft.y1 - bedDraft.y0) };
-    bedDraft = null;
-    if (z.w < 0.05 || z.h < 0.05) return; // muy chica: seguramente fue un toque sin querer
-    settings.bedZones = [...settings.bedZones, z].slice(-3);
-    saveSettings();
-    bedMarking = false;
-    viewer.classList.remove('marking');
-    addLog('Cama marcada');
-    refreshBedInfo();
+  const finishDrag = () => {
+    if (bedDraggingVertex) { bedDraggingVertex = null; saveSettings(); }
   };
-  viewer.addEventListener('pointerup', finish);
-  viewer.addEventListener('pointercancel', () => { bedDraft = null; });
+  viewer.addEventListener('pointerup', finishDrag);
+  viewer.addEventListener('pointercancel', finishDrag);
   refreshBedInfo();
 }
 
+/** Dibuja un polígono cerrado (lista de {x,y} 0..1) con sus vértices como círculos
+ * arrastrables, y la etiqueta "🛏️ CAMA" en su primer punto. */
+function drawPoligono(w, h, pts, { color, fill, label, fs, vertexHandles }) {
+  if (pts.length < 2) return;
+  octx.beginPath();
+  octx.moveTo(pts[0].x * w, pts[0].y * h);
+  for (const pt of pts.slice(1)) octx.lineTo(pt.x * w, pt.y * h);
+  if (pts.length >= 3) octx.closePath();
+  if (fill) { octx.fillStyle = fill; octx.fill(); }
+  octx.strokeStyle = color;
+  octx.stroke();
+  if (label) {
+    octx.fillStyle = color;
+    octx.fillText(label, pts[0].x * w + 6, pts[0].y * h + fs + 4);
+  }
+  if (vertexHandles) {
+    octx.setLineDash([]);
+    for (const pt of pts) {
+      octx.beginPath();
+      octx.arc(pt.x * w, pt.y * h, Math.max(6, w * 0.012), 0, Math.PI * 2);
+      octx.fillStyle = color;
+      octx.fill();
+    }
+    octx.setLineDash([12, 8]);
+  }
+}
+
 function drawBedZones(w, h) {
-  const zones = [...settings.bedZones];
-  if (bedDraft) zones.push({ x: Math.min(bedDraft.x0, bedDraft.x1), y: Math.min(bedDraft.y0, bedDraft.y1), w: Math.abs(bedDraft.x1 - bedDraft.x0), h: Math.abs(bedDraft.y1 - bedDraft.y0), draft: true });
-  if (!zones.length) return;
+  const zones = settings.bedZones;
   const fs = Math.max(13, Math.round(w / 55));
   octx.save();
   octx.setLineDash([12, 8]);
   octx.lineWidth = Math.max(2, w / 350);
   octx.font = `bold ${fs}px system-ui, sans-serif`;
   for (const z of zones) {
-    octx.strokeStyle = z.draft ? 'rgba(250,204,21,.95)' : 'rgba(96,165,250,.95)';
-    octx.fillStyle = z.draft ? 'rgba(250,204,21,.12)' : 'rgba(96,165,250,.10)';
-    octx.fillRect(z.x * w, z.y * h, z.w * w, z.h * h);
-    octx.strokeRect(z.x * w, z.y * h, z.w * w, z.h * h);
-    octx.fillStyle = z.draft ? '#facc15' : '#93c5fd';
-    octx.fillText('🛏️ CAMA', z.x * w + 6, z.y * h + fs + 4);
+    drawPoligono(w, h, z.pts, {
+      color: 'rgba(96,165,250,.95)', fill: 'rgba(96,165,250,.10)', label: '🛏️ CAMA', fs, vertexHandles: true,
+    });
+  }
+  if (bedMarking && bedDraft) {
+    drawPoligono(w, h, bedDraft, {
+      color: 'rgba(250,204,21,.95)', fill: bedDraft.length >= 3 ? 'rgba(250,204,21,.12)' : null, label: null, fs, vertexHandles: true,
+    });
   }
   octx.restore();
 }

@@ -47,7 +47,14 @@ export function headZone(pose, w, h, sensitivity = 1) {
   if (hombrosOk) {
     const ls = px(pose[P.L_SHOULDER], w, h);
     const rs = px(pose[P.R_SHOULDER], w, h);
-    sizes.push(dist(ls, rs));
+    const shoulderW = dist(ls, rs);
+    // Coherencia cara↔hombros: en una persona real la cara siempre queda a una
+    // distancia chica del cuello, proporcional al ancho de hombros (cerca o lejos de
+    // cámara da igual, la proporción es la misma). Si el modelo "pegó" los hombros de
+    // una persona con la cara de otra (dos personas cerca, poca luz), esa distancia
+    // sale desproporcionadamente grande: mejor no confiar en esta cabeza que avisar mal.
+    if (shoulderW > 0 && dist(mean([ls, rs]), face) > 3 * shoulderW) return null;
+    sizes.push(shoulderW);
     sizes.push(1.4 * Math.abs(mean([ls, rs]).y - face.y));
   }
   if (orejasOk) sizes.push(2.3 * dist(px(pose[P.L_EAR], w, h), px(pose[P.R_EAR], w, h)));
@@ -84,9 +91,9 @@ export function headZone(pose, w, h, sensitivity = 1) {
 
 /** Puntos de las manos que da el modelo de pose (muñeca, meñique, índice, pulgar). */
 export function poseHandPoints(pose, w, h) {
+  // Los nombres L_/R_ de MediaPipe salen al revés de lo que la persona espera con esta cámara,
+  // así que se invierten para que "derecha" sea la mano derecha real de la persona.
   const sides = [
-    // La cámara no está en espejo: lo que para la cámara es la izquierda/derecha de la persona
-    // es al revés de lo que ella misma siente, por eso se informa invertido.
     { side: 'derecha', idx: [P.L_WRIST, P.L_PINKY, P.L_INDEX, P.L_THUMB] },
     { side: 'izquierda', idx: [P.R_WRIST, P.R_PINKY, P.R_INDEX, P.R_THUMB] },
   ];

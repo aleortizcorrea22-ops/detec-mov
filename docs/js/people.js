@@ -104,9 +104,25 @@ export function isLying(pose, w, h) {
   // La rodilla visible tiene que estar a una distancia razonable de la cadera (continuar
   // el cuerpo), no en cualquier lado: si está pegada a la cadera o rarísimo de lejos,
   // tampoco es una pierna real.
-  const kneePt = vis(pose[KNEE.L]) ? px(pose[KNEE.L], w, h) : px(pose[KNEE.R], w, h);
+  const kneeSrc = vis(pose[KNEE.L]) ? pose[KNEE.L] : pose[KNEE.R];
+  const kneePt = px(kneeSrc, w, h);
   const hipKneeDist = dist(hp, kneePt);
   if (hipKneeDist < 0.3 * torso || hipKneeDist > 3 * torso) return { lying: false, angle: null, reason: 'rodilla en posición inválida' };
+  // Objetos del fondo (mesita de luz, almohada, etc.) a veces se "completan" con puntos
+  // sueltos que caen cerca de la cadera en distancia pero en un ángulo cualquiera: una
+  // pierna real sigue aprox. la MISMA dirección general que el tronco (hombro→cadera),
+  // no se dobla en cualquier sentido. Si el ángulo cadera→rodilla se aparta demasiado del
+  // ángulo hombro→cadera, es más probable que sea un punto alucinado que una pierna.
+  const torsoAngle = Math.atan2(hp.y - sh.y, hp.x - sh.x);
+  const legAngle = Math.atan2(kneePt.y - hp.y, kneePt.x - hp.x);
+  let angleDiff = Math.abs(torsoAngle - legAngle) * 180 / Math.PI;
+  if (angleDiff > 180) angleDiff = 360 - angleDiff;
+  if (angleDiff > 75) return { lying: false, angle: null, reason: 'pierna en ángulo inválido respecto del tronco' };
+  // La rodilla usada tiene que tener confianza alta de verdad (no el mínimo general):
+  // es el punto que más se "inventa" sobre objetos del fondo cuando hay mantas de por medio.
+  if (kneeSrc.visibility !== undefined && kneeSrc.visibility < 0.7) {
+    return { lying: false, angle: null, reason: 'rodilla con poca confianza' };
+  }
 
   // 0° = tronco vertical, 90° = horizontal
   const angle = (Math.atan2(Math.abs(sh.x - hp.x), Math.abs(sh.y - hp.y)) * 180) / Math.PI;
@@ -131,6 +147,7 @@ export function isLying(pose, w, h) {
 export function assignHands(poses, hands, w, h) {
   const out = poses.map(() => []);
   if (!poses.length) return out;
+  const anchors = poses.map((p) => poseAnchor(p, w, h));
   for (const hand of hands || []) {
     if (!hand?.[0]) continue;
     const wrist = px(hand[0], w, h);
@@ -138,10 +155,22 @@ export function assignHands(poses, hands, w, h) {
     let bestD = Infinity;
     poses.forEach((pose, i) => {
       const cands = [P.L_WRIST, P.R_WRIST, P.L_INDEX, P.R_INDEX].map((k) => pose[k]).filter(vis).map((l) => px(l, w, h));
-      if (!cands.length) { const a = poseAnchor(pose, w, h); if (a) cands.push(a); }
+      if (!cands.length) { const a = anchors[i]; if (a) cands.push(a); }
       for (const c of cands) { const d = dist(c, wrist); if (d < bestD) { bestD = d; best = i; } }
     });
-    if (best >= 0) out[best].push(hand);
+    if (best < 0) continue;
+    // Una mano real mide, de muñeca a punta de dedo mayor, bastante menos que el ancho de
+    // hombros de esa persona. Un patrón repetido (botones de un respaldo tapizado, una
+    // reja, etc.) a veces se lee como una "mano" varias veces más grande de lo que le
+    // correspondería a esa persona: se descarta antes de que cuente para nada (ni toque
+    // de cabeza ni ninguna otra regla).
+    const anchor = anchors[best];
+    if (anchor && hand[9]) {
+      const tip = px(hand[9], w, h);
+      const handSize = dist(wrist, tip);
+      if (handSize > 1.3 * anchor.size) continue;
+    }
+    out[best].push(hand);
   }
   return out;
 }
@@ -434,7 +463,13 @@ export class ActivityTracker {
       if (s !== this.state && now - this.candSince >= this.stableMs) {
         const prev = this.state;
         this.state = s;
-        if (s === 'parada' || s === 'sentada') this.huboPosturaNormalAntes = true;
+        // El cálculo APROXIMADO (sin rodillas visibles, solo hombros+cadera) es un
+        // respaldo para mostrar algo razonable, pero es un terreno fácil para que un
+        // pliegue de sábana o almohada "parezca" sentada un instante. No alcanza por sí
+        // solo para habilitar la garantía de "estuvo parada/sentada antes" que después
+        // permite confirmar una caída: para eso se exige una postura vista con evidencia
+        // real de piernas (rodillas).
+        if ((s === 'parada' || s === 'sentada') && !p.aprox) this.huboPosturaNormalAntes = true;
         if (prev) {
           if (s === 'sentada' && prev === 'parada') events.push('sento');
           if (s === 'parada' && prev === 'sentada') events.push('levanto');
