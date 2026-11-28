@@ -1549,8 +1549,32 @@ $('shutdownBtn').addEventListener('click', async () => {
   }
 });
 
+// Actualización automática: un celular de vigía puede quedar con la pantalla prendida
+// DÍAS sin que nadie lo toque, y el navegador por sí solo a veces tarda mucho (o nunca)
+// en darse cuenta de que hay una versión nueva, porque nunca vuelve a "navegar" a la
+// página. Acá se le pide explícitamente cada pocos minutos ("¿hay una versión nueva?"),
+// y apenas la hay, se recarga sola (unos segundos sin vigilar, mucho mejor que quedarse
+// semanas con una versión vieja sin que nadie se entere). No hace falta tocar el celular.
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js').catch((e) => console.warn('SW no registrado', e));
+  navigator.serviceWorker.register('sw.js').then((reg) => {
+    const UPDATE_CHECK_MS = 5 * 60 * 1000; // cada 5 minutos
+    setInterval(() => reg.update().catch(() => {}), UPDATE_CHECK_MS);
+    // También al volver a tener la app en pantalla (la vuelven a mirar, cambian de app y
+    // vuelven) o al recuperar internet, por si se perdió alguna revisión periódica.
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') reg.update().catch(() => {}); });
+    window.addEventListener('online', () => reg.update().catch(() => {}));
+  }).catch((e) => console.warn('SW no registrado', e));
+
+  let yaRecargando = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    // Se activó una versión nueva del service worker (sw.js sube VERSION en cada
+    // publicación): recargar para que tome el código nuevo (app.js, rules.js, etc.) sin
+    // depender de que alguien cierre y abra la app a mano.
+    if (yaRecargando) return;
+    yaRecargando = true;
+    addLog('Hay una actualización nueva: reiniciando la app para aplicarla…');
+    setTimeout(() => window.location.reload(), 1500);
+  });
 }
 
 setInterval(refreshWatchZoneInfo, 1000); // reloj en vivo de la zona (entradas/salidas y tiempo adentro/afuera)
