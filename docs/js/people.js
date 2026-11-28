@@ -120,6 +120,17 @@ export function isLying(pose, w, h) {
     const ratio = torso / shoulderW;
     if (ratio < 0.6 || ratio > 2.8) return { lying: false, angle: null, reason: 'proporción de cuerpo inválida' };
   }
+  // Coherencia hombros↔cadera: en un cuerpo real, la línea de los hombros y la línea de
+  // la cadera son casi paralelas (el torso es rígido) — los hombros ya dicen bastante de
+  // cómo está parada/acostada la persona antes de mirar nada más. Si estas dos líneas
+  // quedan en ángulos muy distintos entre sí, es más probable que el modelo haya mezclado
+  // partes de dos lugares distintos (dos personas, o un hombro con una cadera ajena) que
+  // un cuerpo real.
+  const anguloHombros = Math.atan2(px(rs, w, h).y - px(ls, w, h).y, px(rs, w, h).x - px(ls, w, h).x);
+  const anguloCadera = Math.atan2(px(rh, w, h).y - px(lh, w, h).y, px(rh, w, h).x - px(lh, w, h).x);
+  let difHombrosCadera = Math.abs(anguloHombros - anguloCadera) * 180 / Math.PI;
+  if (difHombrosCadera > 180) difHombrosCadera = 360 - difHombrosCadera;
+  if (difHombrosCadera > 45) return { lying: false, angle: null, reason: 'hombros y cadera no son coherentes entre sí' };
   // La rodilla visible tiene que estar a una distancia razonable de la cadera (continuar
   // el cuerpo), no en cualquier lado: si está pegada a la cadera o rarísimo de lejos,
   // tampoco es una pierna real.
