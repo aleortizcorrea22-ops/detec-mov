@@ -5,7 +5,7 @@ import { setupInstallButton } from './install.js';
 // Visible en pantalla (junto al nombre) para confirmar de un vistazo si el celular/PC ya
 // tiene la versión más nueva, sin tener que abrir herramientas de desarrollador. Se sube
 // junto con el VERSION de sw.js en cada cambio.
-const APP_VERSION = 'v97';
+const APP_VERSION = 'v98';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo, loadLicenciaConfig } from './licencia.js';
 import { aplicarConfigRemota, CLAVES_REMOTAS } from './config-remota.js';
@@ -682,6 +682,9 @@ const HAND_RISE_WINDOW_MS = 2500;
 // Una persona real se mantiene confirmada mucho más que esto; una alucinación de un solo
 // cuadro (desenfoque de movimiento al mover la cámara) no llega a sostenerse tanto.
 const PERSON_STABLE_MS = 400;
+// En la cama, una persona fantasma (una prenda, las frazadas) puede confirmarse un par de segundos: se
+// exige que se mantenga confirmada 3 s seguidos antes de dibujarla o avisar (medido en una cama vacía).
+const PERSON_STABLE_CAMA_MS = 3000;
 // VERIFICACIÓN POR RECORTE. El detector COCO no mira el cuadro entero sino el recorte
 // (ampliado) alrededor de cada esqueleto: así reconoce bien a una persona chica o lejana, y
 // un esqueleto inventado sobre cables/escritorio/monitor da puntajes bajísimos. Medido sobre
@@ -1033,7 +1036,7 @@ function processFrame({ source, w, h }) {
     // Se exige mantenerse confirmada un ratito (PERSON_STABLE_MS) antes de dibujarse en
     // pantalla o avisar nada — una persona real se mantiene mucho más que eso.
     if (personaConfirmadaAhora) { if (!p.track.estableDesde) p.track.estableDesde = now; } else { p.track.estableDesde = null; }
-    const personaConfirmada = personaVerificada && p.track.estableDesde !== null && (now - p.track.estableDesde) >= PERSON_STABLE_MS;
+    const personaConfirmada = personaVerificada && p.track.estableDesde !== null && (now - p.track.estableDesde) >= (enCama ? PERSON_STABLE_CAMA_MS : PERSON_STABLE_MS);
     const eventosConfirmados = eventosPendientes(p.track.pendingEv ??= {}, enCama ? act.events.filter((e) => !EVENTOS_SOLO_DE_PIE.includes(e)) : act.events, now, personaConfirmada && personaFuerte, (e) => e === 'pide_ayuda' && res.touching);
     return { id: p.id, track: p.track, pose, hands: handsByPose[p.index], res, touchState, lying, fallState, box: poseBox(pose, w, h),
       personaConfirmada, brazoArriba: act.brazoAhora, posture: act.posture, walking: act.walking, inBed: enCama || (act.lyingNow && act.inBed), events: eventosConfirmados,
