@@ -5,7 +5,7 @@ import { setupInstallButton } from './install.js';
 // Visible en pantalla (junto al nombre) para confirmar de un vistazo si el celular/PC ya
 // tiene la versión más nueva, sin tener que abrir herramientas de desarrollador. Se sube
 // junto con el VERSION de sw.js en cada cambio.
-const APP_VERSION = 'v104';
+const APP_VERSION = 'v105';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo, loadLicenciaConfig } from './licencia.js';
 import { aplicarConfigRemota, CLAVES_REMOTAS } from './config-remota.js';
@@ -835,6 +835,22 @@ function capturarMovimiento(source, w, h, now) {
   movNuevo = !!movPrev;
 }
 
+// v105: diagnostico del detector de toque de cabeza en la cama. El celular informa cada minuto, al servidor de
+// licencias, SOLO numeros de este periodo (cuadros, cuantos pasan cada filtro, medianas de movimiento): sirve para
+// ver desde la PC (config-remota.mjs estado) por que avisa o no avisa, sin tener el celular en la mano.
+const diag = { t0: Date.now(), cuadros: 0, pose: 0, cama: 0, fuerte: 0, vis: 0, cara: 0, muestras: 0, buenas: 0, sost: 0, avisos: 0, coco: 0, cabV: [], torV: [], fueV: [], cabHomV: [] };
+function diagPush(a, x) { if (a.length < 400 && Number.isFinite(x)) a.push(x); }
+function diagMediana(a) { if (!a.length) return 0; const b = [...a].sort((p, q) => p - q); return b[Math.floor(b.length / 2)]; }
+function diagInforme() {
+  const d = {
+    seg: Math.round((Date.now() - diag.t0) / 1000), cuadros: diag.cuadros, pose: diag.pose, cama: diag.cama, fuerte: diag.fuerte,
+    vis: diag.vis, cara: diag.cara, muestras: diag.muestras, buenas: diag.buenas, sost: diag.sost, avisos: diag.avisos, coco: diag.coco,
+    cabMed: diagMediana(diag.cabV), torMed: diagMediana(diag.torV), fueMed: diagMediana(diag.fueV), cabHomMed: diagMediana(diag.cabHomV),
+  };
+  Object.assign(diag, { t0: Date.now(), cuadros: 0, pose: 0, cama: 0, fuerte: 0, vis: 0, cara: 0, muestras: 0, buenas: 0, sost: 0, avisos: 0, cabV: [], torV: [], fueV: [], cabHomV: [] });
+  return d;
+}
+
 /** ¿Hay un brazo moviéndose cerca de la cabeza de esta persona (sostenido)? */
 function movimientoCabeza(pose, now) {
   if (movNuevo) {
@@ -847,6 +863,7 @@ function movimientoCabeza(pose, now) {
       && (hi.visibility ?? 0) >= 0.3 && (hd.visibility ?? 0) >= 0.3) {
       const { sw, sh } = movDim;
       const ojo = Math.hypot((oi.x - od.x) * sw, (oi.y - od.y) * sh);
+      diag.vis++;
       if (ojo > 2) {
         const cab = { x: ((nariz.x + oi.x + od.x) / 3) * sw, y: ((nariz.y + oi.y + od.y) / 3) * sh, r: ojo * MOV_RADIO_CABEZA };
         const tor = { x: ((hi.x + hd.x) / 2) * sw, y: ((hi.y + hd.y) / 2) * sh, r: ojo * MOV_RADIO_TORSO };
@@ -855,9 +872,13 @@ function movimientoCabeza(pose, now) {
         // Medido en videos reales con toque de cabeza: cara-hombros entre 0.2 y 1.4 anchos de hombro.
         const hom = Math.hypot((hi.x - hd.x) * sw, (hi.y - hd.y) * sh);
         const cabHom = Math.hypot(cab.x - tor.x, cab.y - tor.y) / Math.max(hom, 1);
+        diagPush(diag.cabHomV, cabHom);
         if (cabHom <= MOV_CARA_HOMBROS_MAX) {
           const { cabeza, torso, fuera } = movimientoRegiones(movCur, movPrev, sw, sh, cab, tor);
           movHist.push({ t: now, s: cabeza, f: fuera, tor: torso });
+          diag.cara++; diag.muestras++;
+          diagPush(diag.cabV, cabeza); diagPush(diag.torV, torso); diagPush(diag.fueV, fuera);
+          if (cabeza >= 0.015 && cabeza >= 3 * Math.max(fuera, 0.003) && fuera <= 0.04 && torso <= 1.3 * cabeza) diag.buenas++;
         }
       }
     }
@@ -990,8 +1011,10 @@ function processFrame({ source, w, h }) {
     // que la cabeza no hay toque, y mientras hay un toque confirmado no se avisa brazo arriba.
     const brazoAlto = settings.alertPideAyuda && brazoLevantado(pose, w, h, handsByPose[p.index]);
     // El historial de movimiento se actualiza en cada cuadro de la cama, aunque la persona no esté confirmada.
+    diag.cuadros++; diag.pose++;
+    if (enCama) { diag.cama++; if (personaFuerte) diag.fuerte++; diag.coco = Math.round((p.track.lastConfirmedScore || 0) * 1000) / 1000; }
     const movCabeza = enCama && settings.alertCabeza ? movimientoCabeza(pose, now) : false;
-    if (movCabeza) movConfirmaAt = now;
+    if (movCabeza) { movConfirmaAt = now; diag.sost++; }
     const porMovimiento = enCama && (now - movConfirmaAt) <= MOV_PERSONA_MS;
     let res;
     let touchState = 'idle';
@@ -1618,6 +1641,7 @@ async function onPersonAlert(kind, person, total, w, h, source) {
   const cuantas = total === 1 ? '1 persona a la vista' : `${total} personas a la vista`;
   const que = kind === 'fall' ? `🚨 ${quien} está CAÍDA en el suelo` : `⚠️ ${quien} se tocó la cabeza${lado}`;
   const text = `📍 ${nombreVisible()}\n${que}\n👥 ${cuantas}\n🕒 ${when.toLocaleString()}`;
+  if (kind !== 'fall') diag.avisos++;
   addLog(kind === 'fall' ? `${quien} caída en el suelo` : `${quien} se tocó la cabeza${lado}`, 'alert');
   if (settings.beep) { beep(); if (kind === 'fall') setTimeout(beep, 600); }
   navigator.vibrate?.(kind === 'fall' ? [300, 150, 300] : 300);
@@ -1873,7 +1897,7 @@ async function informarEstado() {
     await fetch(`${baseUrl}/api/estado/${encodeURIComponent(id)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ n: deviceName(), v: APP_VERSION, rev: settings.remoteRev || 0, s }),
+      body: JSON.stringify({ n: deviceName(), v: APP_VERSION, rev: settings.remoteRev || 0, s, d: diagInforme() }),
     });
   } catch { /* sin red o servidor sin esta función: se reintenta en un minuto */ }
 }
