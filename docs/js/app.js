@@ -5,7 +5,7 @@ import { setupInstallButton } from './install.js';
 // Visible en pantalla (junto al nombre) para confirmar de un vistazo si el celular/PC ya
 // tiene la versión más nueva, sin tener que abrir herramientas de desarrollador. Se sube
 // junto con el VERSION de sw.js en cada cambio.
-const APP_VERSION = 'v82';
+const APP_VERSION = 'v83';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo, loadLicenciaConfig } from './licencia.js';
 import { iniciarPanelAdmin, NOMBRE_ADMIN_SECRETO } from './admin-panel.js';
@@ -317,7 +317,7 @@ async function loadModels() {
         runningMode: 'VIDEO',
         // Medido en el navegador: persona real ~0.57, fantasmas (escritorio, silla, monitor)
         // como máximo 0.08. 0.2 da margen para personas chicas/sentadas/con poca luz.
-        scoreThreshold: 0.2,
+        scoreThreshold: 0.3,
         maxResults: 8,
         categoryAllowlist: ['person'],
       });
@@ -666,12 +666,19 @@ const OBJ_CHECK_FAST_MS = 300;
  * por el detector de objetos? Si no hay margen de superposición, no se confía en la pose. */
 function poseConfirmadaComoPersona(pose, personBoxes, w, h) {
   const box = poseBox(pose, w, h);
-  if (!box) return false;
-  return personBoxes.some((pb) => (
-    box.cx >= pb.originX - pb.width * 0.2 && box.cx <= pb.originX + pb.width * 1.2 &&
-    box.cy >= pb.originY - pb.height * 0.2 && box.cy <= pb.originY + pb.height * 1.2
-  ));
+  if (!box) return 0;
+  let mejor = 0;
+  for (const pb of personBoxes) {
+    if (box.cx >= pb.originX - pb.width * 0.2 && box.cx <= pb.originX + pb.width * 1.2 &&
+      box.cy >= pb.originY - pb.height * 0.2 && box.cy <= pb.originY + pb.height * 1.2) mejor = Math.max(mejor, pb.score);
+  }
+  return mejor;
 }
+// Medido sobre fotos reales: persona real 0.57-0.91; fantasmas sobre escritorio/cables
+// borrosos, hasta ~0.28 en algún cuadro suelto. Por eso: umbral 0.3 para confirmar, 2
+// confirmaciones seguidas (un cuadro borroso no alcanza) y, para AVISAR algo, puntaje >= 0.45.
+const COCO_SCORE_ALERTA = 0.45;
+let objCheckSeq = 0;
 
 function processFrame({ source, w, h }) {
   let ts = performance.now();
@@ -699,7 +706,8 @@ function processFrame({ source, w, h }) {
         const objRes = objectDetector.detectForVideo(source, ts);
         cachedPersonBoxes = (objRes.detections || [])
           .filter((d) => d.categories?.[0]?.categoryName === 'person')
-          .map((d) => d.boundingBox);
+          .map((d) => ({ ...d.boundingBox, score: d.categories[0].score }));
+        objCheckSeq++;
         if (cachedPersonBoxes.length) objSinPersonaDesde = 0;
         else objSinPersonaDesde ||= ts;
       } catch (e) {
@@ -740,9 +748,15 @@ function processFrame({ source, w, h }) {
     // alertas de esta persona (toque de cabeza, caída, actividades): el verificador de
     // persona (COCO) y la evidencia real de cuerpo (cara o pierna, no solo hombros/cadera
     // que una mano sola puede "completar"). ---
-    if (objectDetector && !objectDetectorFailed && cachedPersonBoxes
-      && poseConfirmadaComoPersona(pose, cachedPersonBoxes, w, h)) {
-      p.track.lastConfirmedPerson = now;
+    if (objectDetector && !objectDetectorFailed && cachedPersonBoxes && p.track.objSeq !== objCheckSeq) {
+      p.track.objSeq = objCheckSeq;
+      const sc = poseConfirmadaComoPersona(pose, cachedPersonBoxes, w, h);
+      if (sc > 0) {
+        p.track.cocoHits = (p.track.cocoHits || 0) + 1;
+        if (p.track.cocoHits >= 2) { p.track.lastConfirmedPerson = now; p.track.lastConfirmedScore = sc; }
+      } else {
+        p.track.cocoHits = 0;
+      }
     }
     // Caso real encontrado: en una habitación vacía de verdad (nadie real ahí), el
     // verificador nunca confirma a nadie — eso es correcto, no un fallo del verificador.
@@ -762,6 +776,7 @@ function processFrame({ source, w, h }) {
     const personaVerificada = !hayVerificador
       || (now - (p.track.lastConfirmedPerson || 0)) <= FALL_CONFIRM_WINDOW_MS
       || (verificadorSinNadieHaceMucho && !!p.track.lastConfirmedPerson);
+    const personaFuerte = !hayVerificador || (personaVerificada && (p.track.lastConfirmedScore || 0) >= COCO_SCORE_ALERTA);
     if (evidenciaDeCuerpoReal(pose)) p.track.lastBodyEvidenceAt = now;
     const cuerpoRealConfirmado = (now - (p.track.lastBodyEvidenceAt || 0)) <= FALL_CONFIRM_WINDOW_MS;
 
@@ -789,7 +804,7 @@ function processFrame({ source, w, h }) {
       // `res.touching` es lo que se usa en todos lados (overlay, estado, alerta): ya
       // incluye estos gates, para no mostrar "CABEZA" en pantalla por algo que de todas
       // formas no iba a avisar.
-      res = { ...resCrudo, touching: resCrudo.touching && cuerpoRealConfirmado && personaVerificada && brazoVinoDeAbajo };
+      res = { ...resCrudo, touching: resCrudo.touching && cuerpoRealConfirmado && personaFuerte && brazoVinoDeAbajo };
       touchState = p.track.touch.update(res.touching, now);
     } else {
       res = { touching: false, zone: null, closest: null, via: null, side: null };
@@ -831,7 +846,7 @@ function processFrame({ source, w, h }) {
     // pantalla o avisar nada — una persona real se mantiene mucho más que eso.
     if (personaConfirmadaAhora) { if (!p.track.estableDesde) p.track.estableDesde = now; } else { p.track.estableDesde = null; }
     const personaConfirmada = personaVerificada && p.track.estableDesde !== null && (now - p.track.estableDesde) >= PERSON_STABLE_MS;
-    const eventosConfirmados = personaConfirmada && personaVerificada ? act.events : [];
+    const eventosConfirmados = personaConfirmada && personaFuerte ? act.events : [];
     return { id: p.id, track: p.track, pose, hands: handsByPose[p.index], res, touchState, lying, fallState, box: poseBox(pose, w, h),
       personaConfirmada, posture: act.posture, walking: act.walking, inBed: act.lyingNow && act.inBed, events: eventosConfirmados,
       zoneEnterCount: act.zoneEnterCount, zoneExitCount: act.zoneExitCount, zoneLastSide: act.zoneLastSide, zoneElapsedS: Math.round(act.zoneElapsedMs / 1000) };
@@ -937,7 +952,10 @@ function drawPerson(w, h, { id, pose, hands, res, lying, box, posture, walking, 
 
   // Etiqueta "Persona N" arriba de cada uno (más grande y en rojo si está alertando).
   if (box) {
-    const estado = inBed ? 'en la cama' : walking ? 'caminando' : posture === 'sentada' ? 'sentada' : posture === 'parada' ? 'parada' : '';
+    // La postura/estado solo se escribe si el usuario tiene alguna actividad tildada: si no,
+    // "sentada"/"parada" sobre el dibujo parece una alarma que nadie pidió.
+    const mostrarEstado = ACTIVITY_KEYS.some((k) => settings[k]);
+    const estado = !mostrarEstado ? '' : inBed ? 'en la cama' : walking ? 'caminando' : posture === 'sentada' ? 'sentada' : posture === 'parada' ? 'parada' : '';
     const label = lying ? `Persona ${id} · EN EL SUELO` : res.touching ? `Persona ${id} · CABEZA` : estado ? `Persona ${id} · ${estado}` : `Persona ${id}`;
     const fs = Math.max(14, Math.round(w / 45));
     octx.font = `bold ${fs}px system-ui, sans-serif`;
@@ -1065,9 +1083,11 @@ async function onActivity(ev, person, total, w, h, source) {
   if (now - (person.track.lastEv[ev] || 0) < minGap) return;
   person.track.lastEv[ev] = now;
 
+  // Si el usuario no tildó esta actividad, no se anota ni en "Eventos" ni se avisa: antes
+  // quedaba escrita igual y parecía una falsa alarma.
+  if (!settings[a.key]) return;
   const quien = `Persona ${person.id}`;
   addLog(a.text(quien, person));
-  if (!settings[a.key]) return; // el usuario no pidió este aviso por Telegram
   const cuantas = total === 1 ? '1 persona a la vista' : `${total} personas a la vista`;
   const text = `📍 ${nombreVisible()}\n${a.icon} ${a.text(quien, person)}\n👥 ${cuantas}\n🕒 ${new Date().toLocaleString()}`;
   // Primero el texto solo (liviano, llega rápido aunque la red del celular esté lenta),
