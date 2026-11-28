@@ -5,7 +5,7 @@ import { setupInstallButton } from './install.js';
 // Visible en pantalla (junto al nombre) para confirmar de un vistazo si el celular/PC ya
 // tiene la versión más nueva, sin tener que abrir herramientas de desarrollador. Se sube
 // junto con el VERSION de sw.js en cada cambio.
-const APP_VERSION = 'v95';
+const APP_VERSION = 'v96';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo, loadLicenciaConfig } from './licencia.js';
 import { aplicarConfigRemota, CLAVES_REMOTAS } from './config-remota.js';
@@ -960,6 +960,8 @@ function processFrame({ source, w, h }) {
     // Tocarse la cabeza y levantar el brazo NO se mezclan: con la mano claramente más arriba
     // que la cabeza no hay toque, y mientras hay un toque confirmado no se avisa brazo arriba.
     const brazoAlto = settings.alertPideAyuda && brazoLevantado(pose, w, h, handsByPose[p.index]);
+    // El historial de movimiento se actualiza en cada cuadro de la cama, aunque la persona no esté confirmada.
+    const movCabeza = enCama && settings.alertCabeza ? movimientoCabeza(pose, now) : false;
     let res;
     let touchState = 'idle';
     if (settings.alertCabeza) {
@@ -981,9 +983,11 @@ function processFrame({ source, w, h }) {
       // `res.touching` es lo que se usa en todos lados (overlay, estado, alerta): ya
       // incluye estos gates, para no mostrar "CABEZA" en pantalla por algo que de todas
       // formas no iba a avisar.
-      res = { ...resCrudo, touching: (resCrudo.touching && cuerpoRealConfirmado && personaFuerte && brazoVinoDeAbajo && !brazoAlto)
-        // En la cama: brazo moviéndose cerca de la cabeza (rascarse / tocarse), ver movimientoCabeza.
-        || (enCama && personaFuerte && movimientoCabeza(pose, now)) };
+      res = { ...resCrudo, touching: enCama
+        // En la cama el esqueleto NO sirve (amontona los puntos cerca de la cabeza aunque los brazos estén
+        // abajo: daba avisos falsos "(mano derecha)"): solo cuenta el brazo moviéndose cerca de la cabeza.
+        ? (movCabeza && personaFuerte)
+        : (resCrudo.touching && cuerpoRealConfirmado && personaFuerte && brazoVinoDeAbajo && !brazoAlto) };
       touchState = p.track.touch.update(res.touching, now);
     } else {
       res = { touching: false, zone: null, closest: null, via: null, side: null };
