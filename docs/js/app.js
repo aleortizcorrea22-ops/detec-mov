@@ -5,7 +5,7 @@ import { setupInstallButton } from './install.js';
 // Visible en pantalla (junto al nombre) para confirmar de un vistazo si el celular/PC ya
 // tiene la versión más nueva, sin tener que abrir herramientas de desarrollador. Se sube
 // junto con el VERSION de sw.js en cada cambio.
-const APP_VERSION = 'v70';
+const APP_VERSION = 'v71';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo, loadLicenciaConfig } from './licencia.js';
 import { iniciarPanelAdmin, NOMBRE_ADMIN_SECRETO } from './admin-panel.js';
@@ -39,7 +39,7 @@ const els = {
   sourceType: $('sourceType'), deviceField: $('deviceField'), deviceSelect: $('deviceSelect'),
   urlField: $('urlField'), cameraUrl: $('cameraUrl'), startBtn: $('startBtn'), stopBtn: $('stopBtn'),
   sensitivity: $('sensitivity'), sensVal: $('sensVal'), holdMs: $('holdMs'), holdVal: $('holdVal'),
-  cooldownS: $('cooldownS'), coolVal: $('coolVal'), model: $('model'), includeFace: $('includeFace'), useHands: $('useHands'),
+  cooldownS: $('cooldownS'), coolVal: $('coolVal'), model: $('model'), alertCabeza: $('alertCabeza'), includeFace: $('includeFace'), useHands: $('useHands'),
   sendPhoto: $('sendPhoto'), beep: $('beep'), drawSkeleton: $('drawSkeleton'), mirror: $('mirror'), viewer: $('viewer'), liveWebrtc: $('liveWebrtc'), liveAudioRow: $('liveAudioRow'), liveMicBtn: $('liveMicBtn'), liveSoundBtn: $('liveSoundBtn'),
   tgStatus: $('tgStatus'), testBtn: $('testBtn'), findChatBtn: $('findChatBtn'), chatList: $('chatList'), log: $('log'),
   directTelegramFields: $('directTelegramFields'), directToken: $('directToken'), directChatIds: $('directChatIds'), saveDirectBtn: $('saveDirectBtn'),
@@ -57,9 +57,9 @@ const els = {
 // Configuración guardada en el equipo
 
 const DEFAULTS = {
-  sourceType: 'device', deviceId: '', cameraUrl: '', sensitivity: 1, holdMs: 600, cooldownS: 30,
+  sourceType: 'device', deviceId: '', cameraUrl: '', sensitivity: 0.6, holdMs: 600, cooldownS: 30,
   model: 'full', includeFace: false, useHands: true, sendPhoto: true, beep: true, drawSkeleton: true, mirror: false, mirrorAuto: true, liveWebrtc: false, liveMicMuted: false, liveSoundMuted: false,
-  deviceName: '', deviceNameAsked: false, maxPeople: 3, detectFalls: true, fallHoldS: 3,
+  deviceName: '', deviceNameAsked: false, maxPeople: 3, alertCabeza: true, detectFalls: true, fallHoldS: 3,
   // Actividades: siempre se anotan en Eventos; a Telegram solo si se activa cada una.
   alertSento: false, alertLevanto: false, alertCamaEntra: false, alertCamaSale: false, alertCamina: false, alertQuieta: false, alertPideAyuda: false,
   bedZones: [],
@@ -103,7 +103,7 @@ function bindSettings() {
   els.holdMs.value = settings.holdMs;
   els.cooldownS.value = settings.cooldownS;
   els.model.value = settings.model;
-  for (const k of ['includeFace', 'useHands', 'sendPhoto', 'beep', 'drawSkeleton', 'mirror', 'liveWebrtc', 'detectFalls', 'watchZoneEnter', 'watchZoneExit', 'watchZoneInside', 'watchZoneOutside', ...ACTIVITY_KEYS]) els[k].checked = settings[k];
+  for (const k of ['includeFace', 'useHands', 'sendPhoto', 'beep', 'drawSkeleton', 'mirror', 'liveWebrtc', 'alertCabeza', 'detectFalls', 'watchZoneEnter', 'watchZoneExit', 'watchZoneInside', 'watchZoneOutside', ...ACTIVITY_KEYS]) els[k].checked = settings[k];
   els.deviceName.value = deviceName();
   els.maxPeople.value = settings.maxPeople;
   els.fallHoldS.value = settings.fallHoldS;
@@ -161,6 +161,7 @@ function bindSettings() {
     refresh();
   });
   on(els.liveWebrtc, 'liveWebrtc');
+  on(els.alertCabeza, 'alertCabeza');
   on(els.detectFalls, 'detectFalls');
   for (const k of ACTIVITY_KEYS) on(els[k], k);
   setupBedZones();
@@ -738,22 +739,31 @@ function processFrame({ source, w, h }) {
     if (evidenciaDeCuerpoReal(pose)) p.track.lastBodyEvidenceAt = now;
     const cuerpoRealConfirmado = (now - (p.track.lastBodyEvidenceAt || 0)) <= FALL_CONFIRM_WINDOW_MS;
 
-    // El brazo tiene que venir DE ABAJO: se sigue cuadro a cuadro si la mano estuvo
-    // claramente baja hace poco (no que "aparezca" ya arriba de golpe). Sin eso, tocar la
-    // cabeza no cuenta, aunque la mano esté ahí ahora mismo.
-    if (manoAbajo(pose, handsByPose[p.index], w, h)) p.track.lastHandDownAt = now;
-    const brazoVinoDeAbajo = (now - (p.track.lastHandDownAt || 0)) <= HAND_RISE_WINDOW_MS;
+    // Toque de cabeza: casilla que se puede apagar (activada por defecto, es la detección
+    // original del proyecto). Si está apagada, directamente no se analiza nada de esto
+    // (no solo "no se avisa"), para no gastar de más en el celular.
+    let res;
+    let touchState = 'idle';
+    if (settings.alertCabeza) {
+      // El brazo tiene que venir DE ABAJO: se sigue cuadro a cuadro si la mano estuvo
+      // claramente baja hace poco (no que "aparezca" ya arriba de golpe). Sin eso, tocar
+      // la cabeza no cuenta, aunque la mano esté ahí ahora mismo.
+      if (manoAbajo(pose, handsByPose[p.index], w, h)) p.track.lastHandDownAt = now;
+      const brazoVinoDeAbajo = (now - (p.track.lastHandDownAt || 0)) <= HAND_RISE_WINDOW_MS;
 
-    // Toque de cabeza: además de la forma de la cabeza/cara (ya la valida evaluateFrame),
-    // tiene que tratarse de una persona confirmada por el verificador, con evidencia real
-    // de cuerpo (no una mano sola haciéndose pasar por alguien tocándose la cabeza), y con
-    // el brazo habiendo subido de verdad desde abajo.
-    const resCrudo = evaluateFrame(pose, handsByPose[p.index], w, h, { sensitivity: settings.sensitivity, includeFace: settings.includeFace });
-    // `res.touching` es lo que se usa en todos lados (overlay, estado, alerta): ya
-    // incluye estos gates, para no mostrar "CABEZA" en pantalla por algo que de todas
-    // formas no iba a avisar.
-    const res = { ...resCrudo, touching: resCrudo.touching && personaVerificada && cuerpoRealConfirmado && brazoVinoDeAbajo };
-    const touchState = p.track.touch.update(res.touching, now);
+      // Además de la forma de la cabeza/cara (ya la valida evaluateFrame), tiene que
+      // tratarse de una persona confirmada por el verificador, con evidencia real de
+      // cuerpo (no una mano sola haciéndose pasar por alguien tocándose la cabeza), y con
+      // el brazo habiendo subido de verdad desde abajo.
+      const resCrudo = evaluateFrame(pose, handsByPose[p.index], w, h, { sensitivity: settings.sensitivity, includeFace: settings.includeFace });
+      // `res.touching` es lo que se usa en todos lados (overlay, estado, alerta): ya
+      // incluye estos gates, para no mostrar "CABEZA" en pantalla por algo que de todas
+      // formas no iba a avisar.
+      res = { ...resCrudo, touching: resCrudo.touching && personaVerificada && cuerpoRealConfirmado && brazoVinoDeAbajo };
+      touchState = p.track.touch.update(res.touching, now);
+    } else {
+      res = { touching: false, zone: null, closest: null, via: null, side: null };
+    }
     const watchAny = settings.watchZoneEnter || settings.watchZoneExit || settings.watchZoneInside || settings.watchZoneOutside;
     const act = p.track.act.update(pose, w, h, now, {
       bedZones: settings.bedZones,
