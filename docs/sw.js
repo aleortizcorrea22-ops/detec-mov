@@ -4,7 +4,7 @@
 // - /api/* (alertas y cámara): siempre por red, nunca en caché.
 // Todo relativo a la propia carpeta del service worker, para que ande igual serví­do
 // en la raíz de un dominio o en una subcarpeta (por ejemplo GitHub Pages).
-const VERSION = 'detecmov-v83';
+const VERSION = 'detecmov-v84';
 const BASE = new URL('.', self.location.href); // ej.: https://host/ o https://host/detec-mov/
 const SHELL = [
   './', 'index.html', 'ver.html', 'multiver.html', 'manual.html', 'styles.css', 'manifest.webmanifest',
@@ -13,7 +13,9 @@ const SHELL = [
 ].map((p) => new URL(p, BASE).href);
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // cache:'reload' = ir siempre a la red: GitHub Pages manda max-age=600 y sin esto se
+  // podían guardar archivos viejos de la caché HTTP dentro de la versión nueva.
+  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (e) => {
@@ -48,7 +50,7 @@ self.addEventListener('fetch', (e) => {
 
   if (url.origin !== self.location.origin) return;
   e.respondWith(
-    fetch(req)
+    fetch(req, { cache: 'no-cache' }) // revalida siempre: sin esto, max-age=600 servía app.js viejo hasta 10 min
       .then((res) => {
         if (res.ok) {
           const copy = res.clone();
