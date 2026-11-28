@@ -44,15 +44,9 @@ export function evidenciaDeCuerpoReal(pose) {
       // la nariz, entre las dos orejas (en x) y no mucho más lejos que ese ancho (en y).
       if (nose.x >= minX && nose.x <= maxX && Math.abs(nose.y - earYAvg) <= (maxX - minX)) caraCreible = true;
     }
-    // Si además se ven los dos puntos de la boca (MediaPipe también los da): tienen que
-    // estar por debajo de la nariz, como en una cara real. Si se ven pero NO están debajo,
-    // es una señal fuerte de que no hay una cara real ahí (se descarta, aunque el resto
-    // ya diera "creíble").
-    const bocaVis = [pose[P.MOUTH_L], pose[P.MOUTH_R]].filter(vis);
-    if (caraCreible && bocaVis.length) {
-      const mouthYAvg = bocaVis.reduce((s, m) => s + m.y, 0) / bocaVis.length;
-      if (mouthYAvg <= nose.y) caraCreible = false;
-    }
+    // (El chequeo de "boca debajo de la nariz" que hubo acá se sacó: en la práctica
+    // rechazaba caras reales — los puntos de boca de MediaPipe no son lo bastante
+    // precisos con cualquier ángulo/luz como para exigirles una posición exacta.)
   }
   const piernaCreible = [pose[25], pose[26]].some((k) => k && k.visibility !== undefined && k.visibility >= 0.7);
   return caraCreible || piernaCreible;
@@ -283,7 +277,7 @@ export class PeopleTracker {
     anchors.forEach((a, i) => {
       if (!a || usedPose.has(i)) return;
       const t = {
-        id: this.freeId(), x: a.x, y: a.y, size: a.size, lastSeen: now,
+        id: this.freeId(), x: a.x, y: a.y, size: a.size, lastSeen: now, createdAt: now,
         touch: new TouchTracker(this.touchCfg), fall: new TouchTracker(this.fallCfg), act: new ActivityTracker(),
       };
       this.tracks.push(t);

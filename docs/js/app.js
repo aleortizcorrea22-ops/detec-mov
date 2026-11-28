@@ -5,7 +5,7 @@ import { setupInstallButton } from './install.js';
 // Visible en pantalla (junto al nombre) para confirmar de un vistazo si el celular/PC ya
 // tiene la versión más nueva, sin tener que abrir herramientas de desarrollador. Se sube
 // junto con el VERSION de sw.js en cada cambio.
-const APP_VERSION = 'v76';
+const APP_VERSION = 'v77';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo, loadLicenciaConfig } from './licencia.js';
 import { iniciarPanelAdmin, NOMBRE_ADMIN_SECRETO } from './admin-panel.js';
@@ -657,6 +657,11 @@ const HAND_RISE_WINDOW_MS = 2500;
 // Una persona real se mantiene confirmada mucho más que esto; una alucinación de un solo
 // cuadro (desenfoque de movimiento al mover la cámara) no llega a sostenerse tanto.
 const PERSON_STABLE_MS = 400;
+// Margen para un seguimiento recién creado: el verificador de persona (COCO) corre cada
+// 700 ms, así que puede tardar un par de cuadros en alcanzar a confirmar a alguien que
+// recién apareció. Sin este margen, esa persona podía quedar sin detectarse nada (ni
+// dibujo ni análisis) hasta que el verificador la confirmara.
+const NEW_TRACK_GRACE_MS = 3000;
 
 /** ¿El recuadro de esta pose cae adentro (con margen) de algún "person" confirmado
  * por el detector de objetos? Si no hay margen de superposición, no se confía en la pose. */
@@ -752,7 +757,12 @@ function processFrame({ source, w, h }) {
     const hayVerificador = objectDetector && !objectDetectorFailed;
     const verificadorSinNadieHaceMucho = hayVerificador
       && !!objSinPersonaDesde && now - objSinPersonaDesde > FALL_VERIFIER_GIVEUP_MS;
-    const personaVerificada = !hayVerificador
+    // Un seguimiento recién aparecido tiene unos segundos de margen mientras el
+    // verificador (que solo corre cada 700 ms) llega a confirmarlo — sin esto, alguien
+    // que recién entra en cámara podía quedar "sin confirmar" un rato largo y no
+    // detectarse nada de él (ni dibujo ni análisis) hasta que el verificador lo alcanzara.
+    const esMuyNuevo = (now - (p.track.createdAt || now)) <= NEW_TRACK_GRACE_MS;
+    const personaVerificada = !hayVerificador || esMuyNuevo
       || (now - (p.track.lastConfirmedPerson || 0)) <= FALL_CONFIRM_WINDOW_MS
       || (verificadorSinNadieHaceMucho && !!p.track.lastConfirmedPerson);
     if (evidenciaDeCuerpoReal(pose)) p.track.lastBodyEvidenceAt = now;

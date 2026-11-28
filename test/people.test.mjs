@@ -131,16 +131,6 @@ test('evidenciaDeCuerpoReal: dos orejas sin nariz entre ellas NO alcanza', () =>
   assert.equal(evidenciaDeCuerpoReal(lm), false);
 });
 
-test('evidenciaDeCuerpoReal: boca visible pero NO debajo de la nariz → rechaza aunque el resto diera creíble', () => {
-  const lm = Array.from({ length: 33 }, () => ({ x: 0, y: 0, visibility: 0.1 }));
-  lm[P.L_EYE] = { x: 600 / W, y: 150 / H, visibility: 0.9 };
-  lm[P.R_EYE] = { x: 620 / W, y: 150 / H, visibility: 0.9 };
-  lm[P.NOSE] = { x: 610 / W, y: 165 / H, visibility: 0.9 };
-  lm[P.MOUTH_L] = { x: 605 / W, y: 160 / H, visibility: 0.9 }; // arriba de la nariz: inválido
-  lm[P.MOUTH_R] = { x: 615 / W, y: 160 / H, visibility: 0.9 };
-  assert.equal(evidenciaDeCuerpoReal(lm), false);
-});
-
 test('evidenciaDeCuerpoReal: dos ojos CON una nariz creíble debajo → sí cuenta', () => {
   const lm = Array.from({ length: 33 }, () => ({ x: 0, y: 0, visibility: 0.1 }));
   lm[P.L_EYE] = { x: 600 / W, y: 150 / H, visibility: 0.9 };
