@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>DETEC MOV — Ver en vivo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@800&display=swap">
+  <style>
+    :root { color-scheme: dark; }
+    html, body { margin: 0; height: 100%; background: #0b0f10; color: #e6edf0; font: 16px system-ui, sans-serif; }
+    body { display: grid; grid-template-rows: auto 1fr; }
+    header { padding: 10px 14px; display: flex; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 5; background: #0b0f10; flex-wrap: wrap; }
+    .axiven-brand { display: flex; align-items: center; gap: 6px; padding-right: 12px; border-right: 1px solid #27313a; }
+    .axiven-brand img { width: 40px; height: 40px; transform-origin: 50% 50%; animation: 16s ease 0s infinite normal none running axiven-logo-cycle; will-change: transform; }
+    .axiven-brand b { font: 800 22px "Barlow Condensed", Arial, sans-serif; letter-spacing: 1px; color: #e6edf0; }
+    .axiven-brand b span { color: #ff8a2b; }
+    .axiven-brand small { display: block; text-align: center; letter-spacing: 3px; font-size: 7px; color: #9aa7ab; }
+    @keyframes axiven-logo-cycle {
+      0%, 25% { transform: rotate(0deg); animation-timing-function: cubic-bezier(0.7, 0, 0.3, 1); }
+      85%, 100% { transform: rotate(4320deg); }
+    }
+    @media (prefers-reduced-motion: reduce) { .axiven-brand img { animation: none !important; } }
+    #status { color: #9aa7ab; font-size: 14px; }
+    .stage { position: relative; display: grid; place-items: center; padding: 10px; }
+    video { max-width: 100%; max-height: calc(100vh - 60px); border-radius: 8px; background: #000; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: #666; display: inline-block; }
+    .dot.live { background: #ef4444; animation: pulse 1.2s infinite; }
+    @keyframes pulse { 50% { opacity: .4; } }
+    p.hint { color: #9aa7ab; text-align: center; padding: 0 20px; }
+    .controles { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 14px; }
+    button { font: inherit; border: 0; border-radius: 10px; padding: 14px 20px; cursor: pointer; }
+    #sonidoBtn { background: #0f766e; color: #fff; }
+    #hablarBtn, #dialogoBtn { background: #374151; color: #fff; width: 100%; max-width: 320px; font-size: 1.1rem; touch-action: none; user-select: none; }
+    #hablarBtn.activo, #dialogoBtn.activo { background: #ef4444; }
+    #hablarBtn[disabled], #dialogoBtn[disabled] { opacity: 0.5; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="axiven-brand">
+      <img src="icons/axiven-logo.svg" alt="Logo AXIVEN">
+      <div><b>A<span>X</span>IVEN</b><small>INGENIERÍA</small></div>
+    </div>
+    <strong id="equipo" style="font-size:18px;margin-right:6px"></strong>
+    <span id="dot" class="dot"></span>
+    <span id="status">Conectando…</span>
+    <a id="volverBtn" class="btn" href="#" hidden style="margin-left:auto;text-decoration:none;color:#e6edf0;background:#374151;padding:8px 12px;border-radius:8px;font-size:14px">← Ver todos</a>
+  </header>
+  <div class="stage">
+    <video id="video" playsinline autoplay muted></video>
+    <p id="hint" class="hint" hidden>Si no conecta, puede ser que el celular que vigila esté apagado, sin internet, o que la red de datos no permita la conexión directa (pasa con algunas compañías). Probá con Wi-Fi.</p>
+  </div>
+  <div class="controles">
+    <button id="sonidoBtn">🔊 Activar sonido</button>
+    <button id="hablarBtn" disabled>🎤 Mantené apretado para hablar</button>
+    <button id="dialogoBtn" disabled>🎙️ Tocá una vez para dialogar</button>
+  </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
+  <script>
+    const BASE_URL = 'https://detecmov.axivenvirtual.com';
+    // Servidores para cruzar redes difíciles: STUN de Google siempre, más el TURN
+    // propio de la Raspberry pedido al vuelo (la clave no está escrita acá, que es
+    // código público), y uno público gratuito (Open Relay) de respaldo.
+    async function obtenerIceServers() {
+      const respaldo = {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+          { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+        ],
+      };
+      try {
+        const r = await fetch(`${BASE_URL}/api/ice-servers`);
+        const { iceServers } = await r.json();
+        if (Array.isArray(iceServers) && iceServers.length) return { iceServers: [...iceServers, ...respaldo.iceServers] };
+      } catch { /* sin conexión con la Raspberry ahora: se usa el respaldo */ }
+      return respaldo;
+    }
+
+    const video = document.getElementById('video');
+    const status = document.getElementById('status');
+    const dot = document.getElementById('dot');
+    const hint = document.getElementById('hint');
+    const sonidoBtn = document.getElementById('sonidoBtn');
+    const hablarBtn = document.getElementById('hablarBtn');
+    const dialogoBtn = document.getElementById('dialogoBtn');
+    const remoteId = location.hash.slice(1);
+    const equipo = new URLSearchParams(location.search).get('n');
+    if (equipo) { document.getElementById('equipo').textContent = `📍 ${equipo}`; document.title = `${equipo} · Ver en vivo`; }
+    // Si se llegó acá desde "Ver varios en vivo" (tocando "Ver grande" en un recuadro),
+    // se puede volver a esa pantalla con todos los vigías juntos.
+    const volver = new URLSearchParams(location.search).get('volver');
+    if (volver) {
+      const volverBtn = document.getElementById('volverBtn');
+      volverBtn.href = volver;
+      volverBtn.hidden = false;
+    }
+
+    function setStatus(text, live) {
+      status.textContent = text;
+      dot.classList.toggle('live', !!live);
+    }
+
+    function actualizarBotonSonido() {
+      sonidoBtn.textContent = video.muted ? '🔊 Activar sonido' : '🔇 Desactivar sonido';
+    }
+    sonidoBtn.addEventListener('click', () => {
+      video.muted = !video.muted;
+      if (!video.muted) video.play().catch(() => {});
+      actualizarBotonSonido();
+    });
+
+    // Mientras se habla (mantener apretado o modo diálogo) conviene que el sonido
+    // esté prendido para escuchar la respuesta, así que se activa solo y se esconde
+    // el botón de sonido (no hace falta tocarlo); al soltar/cortar vuelve a pedir
+    // que se active a mano, como al principio.
+    function hablando(activo) {
+      if (activo) {
+        video.muted = false;
+        video.play().catch(() => {});
+        sonidoBtn.hidden = true;
+      } else {
+        video.muted = true;
+        actualizarBotonSonido();
+        sonidoBtn.hidden = false;
+      }
+    }
+
+    // Micrófono para hablar (push-to-talk): se pide una vez, antes de llamar,
+    // y el track se manda apagado salvo mientras se mantiene apretado el botón,
+    // para evitar el eco de tener los dos micrófonos abiertos todo el tiempo.
+    let micTrack = null;
+    const micReady = navigator.mediaDevices
+      ? navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } })
+          .then((micStream) => {
+            micTrack = micStream.getAudioTracks()[0];
+            micTrack.enabled = false;
+            hablarBtn.disabled = false;
+            dialogoBtn.disabled = false;
+          })
+          .catch(() => {
+            hablarBtn.textContent = '🎤 Sin micrófono disponible';
+            dialogoBtn.textContent = '🎙️ Sin micrófono disponible';
+          })
+      : Promise.resolve();
+    // No esperamos para siempre: si tarda o no hay micrófono, se llama igual (solo video).
+    const micOrTimeout = Promise.race([micReady, new Promise((r) => setTimeout(r, 4000))]);
+
+    let dialogoActivo = false;
+
+    function hablar(activo) {
+      if (dialogoActivo) return; // en modo diálogo el micrófono ya queda abierto
+      if (micTrack) micTrack.enabled = activo;
+      hablarBtn.classList.toggle('activo', activo);
+      hablando(activo);
+    }
+    hablarBtn.addEventListener('pointerdown', () => hablar(true));
+    hablarBtn.addEventListener('pointerup', () => hablar(false));
+    hablarBtn.addEventListener('pointerleave', () => hablar(false));
+    hablarBtn.addEventListener('pointercancel', () => hablar(false));
+
+    // Modo diálogo: tocás una vez y el micrófono queda abierto todo el tiempo,
+    // para no tener que acordarse de mantener apretado. Tocás de nuevo para cerrarlo.
+    dialogoBtn.addEventListener('click', () => {
+      dialogoActivo = !dialogoActivo;
+      if (micTrack) micTrack.enabled = dialogoActivo;
+      dialogoBtn.classList.toggle('activo', dialogoActivo);
+      dialogoBtn.textContent = dialogoActivo ? '🎙️ Tocá para cortar el diálogo' : '🎙️ Tocá una vez para dialogar';
+      if (micTrack) hablarBtn.disabled = dialogoActivo;
+      hablando(dialogoActivo);
+    });
+
+    if (!remoteId) {
+      setStatus('Falta el link completo (con el código después de #).');
+      hint.hidden = false;
+    } else if (typeof Peer === 'undefined') {
+      setStatus('Sin conexión a internet.');
+      hint.hidden = false;
+    } else {
+      // Stream para mandar: un video en blanco (para que la llamada reserve lugar
+      // para recibir el video del que vigila) más el audio del micrófono si se consiguió.
+      const blankCanvas = document.createElement('canvas');
+      blankCanvas.width = 2; blankCanvas.height = 2;
+      function outgoingStream() {
+        const blank = blankCanvas.captureStream ? blankCanvas.captureStream(1) : new MediaStream();
+        if (micTrack) blank.addTrack(micTrack);
+        return blank;
+      }
+
+      let connected = false;
+      let retryTimer = null;
+      let currentCall = null;
+
+      function tryCall(peer) {
+        currentCall?.close();
+        setStatus('Llamando…');
+        const call = peer.call(remoteId, outgoingStream());
+        currentCall = call;
+        call.on('stream', (remoteStream) => {
+          connected = true;
+          clearTimeout(retryTimer);
+          video.srcObject = remoteStream;
+          setStatus('En vivo', true);
+        });
+        call.on('close', () => { if (connected) setStatus('Se terminó la llamada.'); });
+        call.on('error', () => scheduleRetry(peer));
+        setTimeout(() => { if (!connected) scheduleRetry(peer); }, 8000);
+      }
+
+      function scheduleRetry(peer) {
+        if (connected) return;
+        setStatus('No responde todavía, reintentando…');
+        hint.hidden = false;
+        clearTimeout(retryTimer);
+        retryTimer = setTimeout(() => tryCall(peer), 5000);
+      }
+
+      // Servidores para cruzar redes difíciles: STUN de Google siempre, más el TURN
+      // propio de la Raspberry pedido al vuelo (la clave no está escrita acá), y uno
+      // público gratuito (Open Relay) de respaldo si no se pudo pedir.
+      obtenerIceServers().then((config) => {
+        const peer = new Peer(undefined, { config });
+        peer.on('open', () => micOrTimeout.then(() => tryCall(peer)));
+        peer.on('error', (err) => {
+          if (err.type === 'peer-unavailable') { scheduleRetry(peer); return; }
+          setStatus(`Error: ${err.type || err.message}`);
+          hint.hidden = false;
+        });
+      });
+    }
+  </script>
+</body>
+</html>

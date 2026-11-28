@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>DETEC MOV — Varios en vivo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@800&display=swap">
+  <style>
+    :root { color-scheme: dark; }
+    html, body { margin: 0; min-height: 100%; background: #0b0f10; color: #e6edf0; font: 16px system-ui, sans-serif; }
+    header { padding: 10px 14px; display: flex; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 5; background: #0b0f10; flex-wrap: wrap; border-bottom: 1px solid #27313a; }
+    .axiven-brand { display: flex; align-items: center; gap: 6px; padding-right: 12px; border-right: 1px solid #27313a; }
+    .axiven-brand img { width: 40px; height: 40px; transform-origin: 50% 50%; animation: 16s ease 0s infinite normal none running axiven-logo-cycle; will-change: transform; }
+    .axiven-brand b { font: 800 22px "Barlow Condensed", Arial, sans-serif; letter-spacing: 1px; color: #e6edf0; }
+    .axiven-brand b span { color: #ff8a2b; }
+    .axiven-brand small { display: block; text-align: center; letter-spacing: 3px; font-size: 7px; color: #9aa7ab; }
+    @keyframes axiven-logo-cycle {
+      0%, 25% { transform: rotate(0deg); animation-timing-function: cubic-bezier(0.7, 0, 0.3, 1); }
+      85%, 100% { transform: rotate(4320deg); }
+    }
+    @media (prefers-reduced-motion: reduce) { .axiven-brand img { animation: none !important; } }
+    h1 { font-size: 16px; margin: 0; }
+    p.vacio, p.hint { color: #9aa7ab; text-align: center; padding: 30px 20px; }
+    .grilla { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; padding: 10px; }
+    .grilla.chica { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 6px; padding: 6px; }
+    .grilla.chica .tarjeta { border-width: 1px; border-radius: 8px; }
+    .grilla.chica .cabecera { padding: 4px 6px; font-size: 11px; }
+    .grilla.chica .toca-para-oir { font-size: 9px; padding: 2px 6px; }
+    .grilla.chica .estado { font-size: 10px; padding: 2px 6px; }
+    .grilla.chica .botones { padding: 4px; }
+    .grilla.chica .tarjeta button, .grilla.chica .tarjeta a.btn { font-size: 10px; padding: 4px; }
+    #zoomGrillaBtn { margin-left: auto; background: #374151; color: #fff; border: 0; border-radius: 8px; padding: 8px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+    .tarjeta { background: #121820; border: 2px solid #27313a; border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; }
+    .tarjeta.escuchando { border-color: #0f766e; }
+    .tarjeta .video-caja { cursor: pointer; }
+    .tarjeta .toca-para-oir { position: absolute; left: 8px; top: 8px; font-size: 11px; background: rgba(0,0,0,.55); padding: 3px 8px; border-radius: 999px; }
+    .tarjeta.escuchando .toca-para-oir { background: #0f766e; }
+    .tarjeta .cabecera { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 8px 10px; font-size: 14px; }
+    .tarjeta .dot { width: 9px; height: 9px; border-radius: 50%; background: #666; flex-shrink: 0; }
+    .tarjeta .dot.live { background: #ef4444; animation: pulse 1.2s infinite; }
+    @keyframes pulse { 50% { opacity: .4; } }
+    .tarjeta .video-caja { position: relative; background: #000; aspect-ratio: 4/3; }
+    .tarjeta video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+    .tarjeta .estado { position: absolute; left: 8px; bottom: 8px; font-size: 12px; background: rgba(0,0,0,.55); padding: 3px 8px; border-radius: 999px; }
+    .tarjeta .botones { display: flex; gap: 6px; padding: 8px; }
+    .tarjeta button, .tarjeta a.btn { flex: 1; text-align: center; text-decoration: none; font: inherit; font-size: 13px; border: 0; border-radius: 8px; padding: 8px; cursor: pointer; background: #374151; color: #fff; }
+    .tarjeta button.on { background: #0f766e; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="axiven-brand">
+      <img src="icons/axiven-logo.svg" alt="Logo AXIVEN">
+      <div><b>A<span>X</span>IVEN</b><small>INGENIERÍA</small></div>
+    </div>
+    <h1>DETEC MOV — Varios en vivo</h1>
+    <button id="zoomGrillaBtn" type="button">🔳 Grilla chica</button>
+  </header>
+  <div id="contenido"></div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.4/peerjs.min.js"></script>
+  <script>
+    // Muestra varios vigías conectados al mismo tiempo, cada uno en su recuadro.
+    // Dos formas de llegar acá:
+    //  - ?id=<chat_id>  → el link que manda el propio bot de Telegram: pregunta sola,
+    //    cada pocos segundos, quién de ESE sistema está en vivo ahora (sin clave,
+    //    público pero acotado a ese id), y agrega/sacos recuadros solo.
+    //  - ?lista=<base64 de un JSON [{n, p}, ...]>  → la que arma el panel de
+    //    administrador, con una lista fija ya elegida.
+    // En los dos casos: solo video (sin audio ni micrófono, para no mezclar sonidos
+    // de varios a la vez); se toca el video que se quiere escuchar y "Ver grande"
+    // abre la pantalla completa de ese vigía (con hablar/dialogar).
+    const BASE_URL = 'https://detecmov.axivenvirtual.com';
+    // Servidores para cruzar redes difíciles: STUN de Google siempre, más el TURN
+    // propio de la Raspberry pedido al vuelo (la clave no está escrita acá, que es
+    // código público), y uno público gratuito (Open Relay) de respaldo.
+    async function obtenerIceServers() {
+      const respaldo = {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+          { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+        ],
+      };
+      try {
+        const r = await fetch(`${BASE_URL}/api/ice-servers`);
+        const { iceServers } = await r.json();
+        if (Array.isArray(iceServers) && iceServers.length) return { iceServers: [...iceServers, ...respaldo.iceServers] };
+      } catch { /* sin conexión con la Raspberry ahora: se usa el respaldo */ }
+      return respaldo;
+    }
+    const contenido = document.getElementById('contenido');
+    const vacioMsg = document.createElement('p');
+    vacioMsg.className = 'vacio';
+    vacioMsg.textContent = 'No hay ningún vigía transmitiendo en vivo ahora.';
+    const grilla = document.createElement('div');
+    grilla.className = 'grilla';
+    contenido.appendChild(vacioMsg);
+    contenido.appendChild(grilla);
+
+    // Grilla chica (miniaturas, para que entren varios vigías sin desplazar la
+    // pantalla) o grande (como estaba antes): se recuerda la elección en este navegador.
+    const zoomGrillaBtn = document.getElementById('zoomGrillaBtn');
+    function aplicarTamañoGrilla(chica) {
+      grilla.classList.toggle('chica', chica);
+      zoomGrillaBtn.textContent = chica ? '🔲 Grilla grande' : '🔳 Grilla chica';
+      try { localStorage.setItem('detecmov.multiver.grillaChica', chica ? '1' : '0'); } catch {}
+    }
+    zoomGrillaBtn.addEventListener('click', () => aplicarTamañoGrilla(!grilla.classList.contains('chica')));
+    aplicarTamañoGrilla((() => { try { return localStorage.getItem('detecmov.multiver.grillaChica') === '1'; } catch { return false; } })());
+
+    const tarjetas = new Map(); // peerId -> { el, peer }
+
+    function actualizarVacio() {
+      vacioMsg.hidden = tarjetas.size > 0;
+    }
+
+    function agregarTarjeta(nombre, peerId) {
+      if (tarjetas.has(peerId)) return;
+      const verUrl = `ver.html?n=${encodeURIComponent(nombre)}&volver=${encodeURIComponent(location.href)}#${encodeURIComponent(peerId)}`;
+      const tarjeta = document.createElement('div');
+      tarjeta.className = 'tarjeta';
+      tarjeta.innerHTML = `
+        <div class="cabecera"><span>📍 ${nombre.replace(/[&<>]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}</span><span class="dot"></span></div>
+        <div class="video-caja">
+          <video playsinline autoplay muted></video>
+          <span class="toca-para-oir">👆 Tocá para escuchar</span>
+          <span class="estado">Conectando…</span>
+        </div>
+        <div class="botones">
+          <a class="btn" target="_blank" rel="noopener" href="${verUrl}">⛶ Ver grande</a>
+        </div>`;
+      grilla.appendChild(tarjeta);
+
+      const video = tarjeta.querySelector('video');
+      const dot = tarjeta.querySelector('.dot');
+      const estado = tarjeta.querySelector('.estado');
+      const videoCaja = tarjeta.querySelector('.video-caja');
+
+      // Tocando un video se escucha ese y se silencian todos los demás, para no
+      // mezclar el sonido de varios vigías a la vez. Tocando el que ya está sonando,
+      // se apaga (no se queda pegado para siempre).
+      videoCaja.addEventListener('click', () => {
+        const yaEstabaEscuchando = tarjeta.classList.contains('escuchando');
+        document.querySelectorAll('.tarjeta video').forEach((v) => { v.muted = true; });
+        document.querySelectorAll('.tarjeta').forEach((t) => t.classList.remove('escuchando'));
+        if (!yaEstabaEscuchando) {
+          video.muted = false;
+          video.play().catch(() => {});
+          tarjeta.classList.add('escuchando');
+        }
+      });
+
+      let connected = false;
+      let retryTimer = null;
+      const blankCanvas = document.createElement('canvas');
+      blankCanvas.width = 2; blankCanvas.height = 2;
+
+      // La llamada necesita ofrecer un canal de audio (aunque sea en silencio) para que
+      // la vigía pueda contestar con SU audio: si no se ofrece ninguno, no hay por dónde
+      // volver con sonido real, aunque la vigía sí lo mande.
+      function pistaDeAudioSilenciosa() {
+        try {
+          const ctx = new (window.AudioContext || window.webkitAudioContext)();
+          const destino = ctx.createMediaStreamDestination();
+          const osc = ctx.createOscillator();
+          const ganancia = ctx.createGain();
+          ganancia.gain.value = 0;
+          osc.connect(ganancia).connect(destino);
+          osc.start();
+          return destino.stream.getAudioTracks()[0];
+        } catch { return null; }
+      }
+
+      function outgoingStream() {
+        const s = blankCanvas.captureStream ? blankCanvas.captureStream(1) : new MediaStream();
+        const silencio = pistaDeAudioSilenciosa();
+        if (silencio) s.addTrack(silencio);
+        return s;
+      }
+
+      function tryCall(peer) {
+        estado.textContent = 'Llamando…';
+        const call = peer.call(peerId, outgoingStream());
+        call.on('stream', (remoteStream) => {
+          connected = true;
+          clearTimeout(retryTimer);
+          video.srcObject = remoteStream;
+          estado.textContent = 'En vivo';
+          dot.classList.add('live');
+        });
+        call.on('close', () => { if (connected) estado.textContent = 'Se terminó.'; });
+        call.on('error', () => scheduleRetry(peer));
+        setTimeout(() => { if (!connected) scheduleRetry(peer); }, 8000);
+      }
+      function scheduleRetry(peer) {
+        if (connected) return;
+        estado.textContent = 'Reintentando…';
+        clearTimeout(retryTimer);
+        retryTimer = setTimeout(() => tryCall(peer), 5000);
+      }
+
+      obtenerIceServers().then((config) => {
+        const peer = new Peer(undefined, { config });
+        peer.on('open', () => tryCall(peer));
+        peer.on('error', (err) => {
+          if (err.type === 'peer-unavailable') { scheduleRetry(peer); return; }
+          estado.textContent = `Error: ${err.type || err.message}`;
+        });
+        tarjetas.get(peerId).peer = peer;
+      });
+
+      tarjetas.set(peerId, { el: tarjeta, peer: null });
+      actualizarVacio();
+    }
+
+    function quitarTarjeta(peerId) {
+      const t = tarjetas.get(peerId);
+      if (!t) return;
+      try { t.peer.destroy(); } catch {}
+      t.el.remove();
+      tarjetas.delete(peerId);
+      actualizarVacio();
+    }
+
+    function leerListaFija() {
+      try {
+        const q = new URLSearchParams(location.search).get('lista');
+        if (!q) return null;
+        const json = decodeURIComponent(atob(q));
+        const arr = JSON.parse(json);
+        return Array.isArray(arr) ? arr.filter((x) => x && x.p) : [];
+      } catch { return []; }
+    }
+
+    const idPropio = new URLSearchParams(location.search).get('id');
+    const listaFija = leerListaFija();
+
+    if (typeof Peer === 'undefined') {
+      contenido.innerHTML = '<p class="hint">Sin conexión a internet.</p>';
+    } else if (listaFija) {
+      vacioMsg.textContent = 'No hay ningún vigía transmitiendo en vivo ahora. Volvé al panel y tocá "📺 Ver varios en vivo" cuando haya alguno conectado.';
+      listaFija.forEach((item, i) => agregarTarjeta(String(item.n || `Vigía ${i + 1}`), String(item.p)));
+      actualizarVacio();
+    } else if (idPropio) {
+      async function revisar() {
+        try {
+          const r = await fetch(`${BASE_URL}/api/presencia/${encodeURIComponent(idPropio)}`);
+          const { presencia } = await r.json();
+          const vivos = new Set((presencia || []).map((p) => p.peerId));
+          for (const p of presencia || []) agregarTarjeta(p.deviceName || 'Vigía', p.peerId);
+          for (const peerId of [...tarjetas.keys()]) if (!vivos.has(peerId)) quitarTarjeta(peerId);
+        } catch { /* sin conexión por ahora, se reintenta solo */ }
+      }
+      revisar();
+      setInterval(revisar, 10000);
+    } else {
+      vacioMsg.textContent = 'Falta el id del sistema en el link.';
+      actualizarVacio();
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DETEC MOV — Guía</title>
+<style>
+  :root { color-scheme: light; }
+  body { font: 16px/1.5 system-ui, sans-serif; max-width: 820px; margin: 0 auto; padding: 24px 20px 80px; color: #1b1f22 !important; background: #ffffff !important; }
+  * { color-scheme: light; }
+  h1 { font-size: 1.6rem; margin-bottom: 4px; color: #1b1f22; }
+  .sub { color: #666; margin-top: 0; }
+  h2 { margin-top: 2.2em; border-bottom: 2px solid #0f766e; padding-bottom: 6px; color: #1b1f22; }
+  h3 { margin-top: 1.6em; color: #1b1f22; }
+  p, li, label { color: #1b1f22; }
+  code { background: #f0f0f0; color: #1b1f22; padding: 2px 5px; border-radius: 4px; font-size: 0.92em; }
+  pre { background: #f0f0f0; color: #1b1f22; padding: 10px 12px; border-radius: 8px; overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+  th, td { border: 1px solid #ccc; padding: 8px 10px; text-align: left; font-size: 0.95em; color: #1b1f22; background: #fff; }
+  th { background: #e6f2f0; }
+  .nota { background: #e6f2f0; color: #1b1f22; border-left: 4px solid #0f766e; padding: 10px 14px; border-radius: 6px; margin: 14px 0; }
+  .ok { color: #0f766e; font-weight: 600; }
+  nav { background: #e6f2f0; color: #1b1f22; border-radius: 10px; padding: 14px 18px; margin: 20px 0; }
+  nav ol { margin: 0; padding-left: 1.2em; }
+  nav a { color: #0f766e; }
+  footer { margin-top: 3em; color: #888; font-size: 0.85em; }
+  input { color: #1b1f22; background: #fff; border: 1px solid #ccc; }
+</style>
+</head>
+<body>
+
+<h1>DETEC MOV — Guía de referencia</h1>
+<p class="sub">Qué hace la app, cómo usarla y cómo resolver los problemas más comunes. Actualizado el 19/11/2026.</p>
+
+<nav>
+  <ol>
+    <li><a href="#que-es">Qué es</a></li>
+    <li><a href="#modos">Los dos modos</a></li>
+    <li><a href="#telegram-bot">Crear el bot y el grupo de Telegram</a></li>
+    <li><a href="#sistemas">Varios sistemas independientes</a></li>
+    <li><a href="#celular-solo">Modo celular solo (recomendado, sin PC)</a></li>
+    <li><a href="#con-pc">Modo con PC / servidor</a></li>
+    <li><a href="#camara">Elegir cámara (trasera / delantera)</a></li>
+    <li><a href="#vivo">Ver la cámara en vivo desde otro celular</a></li>
+    <li><a href="#ajustes">Tabla de ajustes</a></li>
+    <li><a href="#problemas">Problemas comunes</a></li>
+    <li><a href="#limites">Límites a tener en cuenta</a></li>
+    <li><a href="#links">Links importantes</a></li>
+    <li><a href="#notas">Mis datos (privado, solo en este navegador)</a></li>
+  </ol>
+</nav>
+
+<h2 id="que-es">Qué es</h2>
+<p>
+DETEC MOV mira con una cámara a la persona y, cuando se detecta que una mano toca o se queda sobre la cabeza (rascado), manda una alerta por <b>Telegram</b> con la hora y una foto. Dibuja el esqueleto de la persona sobre el video para poder calibrarlo, y funciona con la persona cerca o lejos de la cámara.
+</p>
+<p>No cuenta tocarse la cara (ojos, nariz, mejillas, boca, mentón) salvo que se active esa opción a propósito; solo avisa por contacto real con la cabeza (arriba o a los costados, sobre las orejas).</p>
+
+<h2 id="modos">Los dos modos</h2>
+<table>
+  <tr><th></th><th>Celular solo</th><th>Con PC / servidor</th></tr>
+  <tr><td>Necesita una PC prendida</td><td>No</td><td>Sí</td></tr>
+  <tr><td>Dónde se abre</td><td><a href="https://aleortizcorrea22-ops.github.io/detec-mov/">GitHub Pages</a></td><td><code>http://localhost:3000</code> en la PC</td></tr>
+  <tr><td>Cámara</td><td>La del propio celular</td><td>Cámara de la PC, Iriun Webcam, cámara IP o RTSP</td></tr>
+  <tr><td>Token/chat de Telegram</td><td>Guardado en el celular (localStorage)</td><td>Guardado en <code>.env</code> en la PC</td></tr>
+  <tr><td>Ver en vivo desde otro aparato</td><td>Sí, celular a celular (WebRTC)</td><td>Sí, con <code>live.html</code> + cloudflared</td></tr>
+</table>
+<div class="nota">Si usás los dos al mismo tiempo (PC vigilando y celular vigilando), van a llegar <b>alertas duplicadas</b>. Dejá uno solo prendido.</div>
+
+<h2 id="telegram-bot">Crear el bot y el grupo de Telegram</h2>
+<p>Esto se hace <b>una sola vez</b>. Después, el token y el chat_id que obtengas acá son los que vas a usar en todos los celulares/PCs que configures.</p>
+
+<h3>1. Crear el bot con @BotFather</h3>
+<ol>
+  <li>Abrí Telegram y buscá el usuario <code>@BotFather</code> (el bot oficial de Telegram para crear bots, tiene una tilde azul).</li>
+  <li>Escribile <code>/newbot</code>.</li>
+  <li>Te va a pedir un <b>nombre</b> para el bot (lo que se ve, puede tener espacios, por ejemplo "Meme Avisos"). Escribilo y enviá.</li>
+  <li>Te va a pedir un <b>usuario</b> para el bot: tiene que terminar en <code>bot</code> y no puede tener espacios (por ejemplo <code>MemeAvisosBot</code>). Si ya está usado, probá otro.</li>
+  <li>Te va a responder con un mensaje que incluye el <b>token</b>, algo como <code>123456789:AAH...</code> (un número, dos puntos, y letras/números después). Ese token es la "contraseña" del bot: guardalo, es lo que vas a pegar en la app y en el panel de la guía (sección "Mis datos" más abajo).</li>
+</ol>
+
+<h3>2. Crear el grupo de Telegram</h3>
+<ol>
+  <li>En Telegram, tocá el botón de escribir/nuevo (el lápiz o el "+") y elegí <b>"Nuevo grupo"</b>.</li>
+  <li>Agregá al menos a una persona (puede ser vos mismo desde otro contacto, o quien vaya a recibir las alertas) y poné un nombre al grupo (por ejemplo "Avisos DETEC MOV").</li>
+  <li>Creá el grupo.</li>
+</ol>
+
+<h3>3. Agregar el bot al grupo</h3>
+<ol>
+  <li>Entrá al grupo, tocá el nombre del grupo arriba (o los tres puntitos) y buscá la opción <b>"Agregar miembro"</b> / <b>"Add member"</b>.</li>
+  <li>Buscá el usuario del bot que creaste (por ejemplo <code>@MemeAvisosBot</code>) y agregalo.</li>
+  <li>Telegram puede avisar que el bot "no tiene acceso a los mensajes del grupo": es normal, el bot igual puede <i>enviar</i> mensajes al grupo; ese aviso es sobre si puede <i>leer</i> todos los mensajes, que no hace falta para esto.</li>
+  <li>Escribí cualquier cosa en el grupo (por ejemplo "hola"), para que Telegram registre que el bot tiene actividad ahí.</li>
+</ol>
+
+<h3>4. Obtener el chat_id del grupo</h3>
+<p>El chat_id es el número que identifica a ese grupo (no es el nombre). Para conseguirlo:</p>
+<ol>
+  <li>Abrí la app DETEC MOV (o <code>GUIA.html</code> no sirve para esto, tiene que ser la app) con el token ya cargado.</li>
+  <li>Tocá <b>"Buscar mi chat_id"</b>. Va a aparecer una lista con los chats donde el bot tiene actividad reciente: buscá el que tenga el nombre de tu grupo.</li>
+  <li>El número de un grupo normal es negativo (por ejemplo <code>-123456789</code>); si el grupo es grande o se convirtió en "supergrupo", el número puede ser más largo y empezar con <code>-100</code> (por ejemplo <code>-1004313817541</code>). Copiá el número completo, con el signo menos.</li>
+  <li>Pegá ese número en el campo "Chat ID" de la app, junto al token, y tocá Guardar.</li>
+</ol>
+<div class="nota">Si el grupo se convierte más adelante en "supergrupo" (pasa solo, cuando crece o se le activan ciertas funciones), el chat_id <b>cambia</b>. Si las alertas dejan de llegar y antes andaban, repetí el paso 4 para conseguir el chat_id nuevo.</div>
+
+<h3>5. Probar</h3>
+<p>Con el token y el chat_id ya guardados en la app, tocá <b>"Enviar alerta de prueba"</b>. Si el mensaje llega al grupo, quedó todo configurado. Para avisos a varios grupos o personas, se pueden poner varios chat_id separados por coma en ese mismo campo.</p>
+
+<h2 id="sistemas">Varios sistemas independientes (distintas personas o lugares)</h2>
+
+<p><b>Qué es un "sistema":</b> es un grupo de Telegram más uno o varios celulares vigía, todo para UNA sola persona o UN solo lugar. Por ejemplo, "el sistema de mi tía" es: su grupo de Telegram + el o los celulares que la vigilan a ella. Si después armás lo mismo para otra persona, eso es OTRO sistema, separado del primero: ese grupo nuevo no va a recibir nada de los celulares del primer sistema, y al revés tampoco. No se mezclan en absoluto, siempre y cuando sigas los pasos de abajo tal cual.</p>
+
+<p><b>Por qué no se mezclan:</b> cada celular vigía, en la sección "Telegram" de la app, tiene guardados un <i>token</i> (la "contraseña" de un bot) y un <i>chat_id</i> (el número del grupo). El celular manda las alertas SOLO a ese chat_id, usando SOLO ese token. Si a cada sistema le das un token y un chat_id distintos, es matemáticamente imposible que las alertas de un sistema caigan en el grupo de otro.</p>
+
+<div class="nota">Si tenés la app para PC instalada (<code>C:\DETEC MOV</code>), hay un panel (<code>admin-sistemas.html</code>) que hace la mayoría de estos pasos por vos con solo pegar el token: más abajo está explicado en detalle. Igual te dejo acá todos los pasos a mano, por si no tenés esa PC a mano o preferís hacerlo desde el celular.</div>
+
+<div class="nota"><b>Antes de empezar, una decisión importante:</b> para cada sistema nuevo, creá un BOT nuevo (no reutilices el mismo bot de otro sistema). Te explico por qué con un ejemplo: si usás el mismo bot para el sistema de tu tía y el de tu vecino, y alguien del lado de tu vecino llega a tener el token de ese bot (por ejemplo porque se lo diste para configurar su celular vigía), con ese mismo token esa persona podría, si quisiera, mandarle mensajes al grupo de tu tía, o encontrar el chat_id del grupo de tu tía tocando "Buscar mi chat_id" en la app. Con un bot distinto por cada sistema, el token de un sistema no sirve absolutamente para nada en los demás: es la única forma de que queden realmente separados.</div>
+
+<h3>Paso a paso para armar un sistema nuevo, de cero</h3>
+<p>Vas a repetir, para este sistema nuevo, los mismos pasos de la sección "Crear el bot y el grupo de Telegram" de más arriba, pero con nombres distintos para no confundirte con los de otro sistema. Te lo repito acá completo, con todos los detalles, para que no tengas que ir y volver:</p>
+
+<h4>1. Crear un bot nuevo, exclusivo para este sistema</h4>
+<ol>
+  <li>Abrí la app de Telegram (en tu celular o en la computadora, da igual).</li>
+  <li>Arriba, donde se busca, escribí <code>BotFather</code> y tocá el que tiene una tilde azul al lado del nombre (es el chat oficial de Telegram, <code>@BotFather</code>). Entrá a ese chat.</li>
+  <li>Abajo, donde se escribe un mensaje, escribí exactamente <code>/newbot</code> y enviálo (como si fuera un mensaje de WhatsApp cualquiera).</li>
+  <li>El BotFather te va a contestar pidiéndote un <b>nombre</b> para el bot. Este nombre es solo para identificarlo, puede tener espacios y acentos. Como esto es para un sistema nuevo, ponele algo que lo distinga del resto, por ejemplo <code>Avisos de Juana</code> (cambiá "Juana" por el nombre real de la persona o el lugar). Escribilo y enviálo.</li>
+  <li>Ahora te va a pedir un <b>usuario</b> (en inglés, "username") para el bot. Este es distinto del nombre de arriba: no puede tener espacios ni acentos, y tiene que terminar siempre en la palabra <code>bot</code>. Por ejemplo, para el ejemplo de Juana podría ser <code>AvisosJuanaBot</code> o <code>JuanaDetecMovBot</code>. Escribilo y enviálo.</li>
+  <li>Si ese usuario ya lo está usando otra persona en todo Telegram (es como un nombre de usuario de Instagram, tiene que ser único en el mundo), el BotFather te va a avisar que ya está ocupado y te va a pedir que pruebes otro. Probá agregando números o cambiando alguna palabra, hasta que te acepte uno.</li>
+  <li>Cuando te acepta el usuario, el BotFather te manda un mensaje con varias líneas. Ahí adentro, en una de las líneas, vas a ver algo como esto: <code>123456789:AAHxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</code>. Eso completo (los números, los dos puntos, y todas las letras y números después) es el <b>token</b> de este bot nuevo.</li>
+  <li><b>Copiá ese token tal cual, con cuidado de llevarte todo</b> (algunos caracteres pueden quedar cortados en la pantalla, deslizá para asegurarte de copiarlo entero), y pegalo en algún lugar temporal mientras seguís con los pasos siguientes (por ejemplo, en una nota del celular, y después la borrás). No hace falta memorizarlo ni anotarlo en papel.</li>
+</ol>
+
+<h4>2. Crear el grupo de Telegram de este sistema</h4>
+<ol>
+  <li>En Telegram, buscá el botón para escribir algo nuevo: en el celular suele ser un círculo con un lápiz, abajo a la derecha, o un ícono de "+". En la computadora puede estar arriba a la izquierda, al lado de la lupa de buscar.</li>
+  <li>Tocá ese botón y elegí la opción <b>"Nuevo grupo"</b> (en inglés, "New Group").</li>
+  <li>Te va a pedir que elijas al menos un contacto para agregar al grupo. Agregá a la o las personas que van a recibir los avisos de este sistema (pueden ser uno o varios: familiares, cuidadores, etc.). Si por ahora no tenés a nadie más para agregar, podés agregarte un contacto cualquiera y sacarlo después, Telegram no te deja crear un grupo sin al menos un miembro además de vos.</li>
+  <li>Te va a pedir un nombre para el grupo. Ponele algo que lo identifique bien, por ejemplo <code>Juana - avisos DETEC MOV</code>.</li>
+  <li>Confirmá y el grupo queda creado.</li>
+</ol>
+
+<h4>3. Meter el bot nuevo dentro del grupo nuevo</h4>
+<ol>
+  <li>Entrá al grupo que recién creaste (tocalo en la lista de chats).</li>
+  <li>Arriba, tocá el nombre del grupo (o los tres puntitos de arriba a la derecha, según el celular), y buscá una opción que diga <b>"Agregar miembro"</b>, <b>"Agregar"</b> o <b>"Add member"</b>.</li>
+  <li>En el buscador que aparece, escribí el nombre de usuario del bot que creaste en el paso 1 (por ejemplo <code>AvisosJuanaBot</code>, con o sin la @ adelante) y tocalo cuando aparezca en la lista.</li>
+  <li>Confirmá para agregarlo. Es posible que Telegram te muestre un aviso diciendo que el bot "no tiene acceso a los mensajes del grupo" o algo similar: esto es normal y no es un error, no hagas nada con ese aviso. Igual va a poder mandar los avisos al grupo; ese mensaje habla de si puede LEER lo que escriben las personas del grupo (no hace falta eso para que funcione).</li>
+  <li>Una vez agregado el bot, escribí cualquier cosa en el grupo, por ejemplo la palabra <code>hola</code>, y enviála. Este paso es importante: hace que Telegram registre que "hay actividad reciente" en ese grupo, lo cual es necesario para el paso siguiente.</li>
+</ol>
+
+<h4>4. Conseguir el chat_id (el número) de este grupo nuevo</h4>
+<ol>
+  <li>Abrí la app DETEC MOV en cualquier celular (puede ser el mismo celular que después va a vigilar, o cualquier otro celular donde tengas la app, solo para hacer este paso).</li>
+  <li>En la sección "Telegram" de la app, pegá el token nuevo que copiaste en el paso 1 (en el campo que dice "Token del bot"), y tocá <b>Guardar</b>.</li>
+  <li>Tocá el botón <b>"Buscar mi chat_id"</b>.</li>
+  <li>Va a aparecer una lista de chats. Buscá en esa lista el nombre del grupo que creaste en el paso 2 (por ejemplo "Juana - avisos DETEC MOV").</li>
+  <li>Al lado o abajo del nombre vas a ver un número. Si el grupo es chico, ese número suele empezar con un signo menos, por ejemplo <code>-123456789</code>. Si el grupo creció o Telegram lo convirtió en "supergrupo", el número puede ser más largo y empezar con <code>-100</code>, por ejemplo <code>-1004313817541</code>. Copiá el número ENTERO, incluyendo el signo menos del principio.</li>
+  <li>Ese número completo es el <b>chat_id</b> de este sistema nuevo.</li>
+</ol>
+
+<h4>5. Probar que este sistema nuevo funciona</h4>
+<ol>
+  <li>Todavía en la app (con el token nuevo ya guardado del paso 4), pegá también el chat_id nuevo en el campo "Chat ID", al lado del token, y tocá <b>Guardar</b> otra vez.</li>
+  <li>Tocá el botón <b>"Enviar alerta de prueba"</b>.</li>
+  <li>Fijate en el grupo de Telegram de este sistema (el que creaste en el paso 2): tiene que llegar un mensaje de prueba ahí. Si llegó, este sistema nuevo ya está completo y funcionando: ya tenés su token y su chat_id propios.</li>
+  <li>Si NO llegó nada, repasá el paso 3 (que el bot esté agregado al grupo) y el paso 4 (que copiaste el chat_id completo, con el signo menos).</li>
+</ol>
+
+<h4>6. Configurar los celulares vigía de este sistema</h4>
+<p>Ahora que tenés el token y el chat_id de este sistema nuevo, hay que ponerlos en cada celular que va a vigilar para esta persona o lugar (puede ser uno solo, o varios si hay varios equipos vigía):</p>
+<ol>
+  <li>En cada uno de esos celulares, abrí la app DETEC MOV (seguí la sección "Modo celular solo" más abajo si todavía no la instalaste en ese celular).</li>
+  <li>En la sección "Telegram" de la app, pegá el mismo token y el mismo chat_id de este sistema (los del paso 4), y tocá <b>Guardar</b>.</li>
+  <li>Tocá <b>"Enviar alerta de prueba"</b> en ese celular también, para confirmar que ese celular en particular manda bien al grupo de este sistema.</li>
+  <li>Tocá <b>Iniciar</b>: la primera vez te va a preguntar el nombre de este equipo vigía (por ejemplo "Equipo 1 · Dormitorio"). Ponele un nombre que lo distinga de los otros equipos de este mismo sistema, si hay más de uno.</li>
+</ol>
+<div class="nota">Repetí este paso 6 en cada celular que vigile para esta misma persona o lugar. Todos esos celulares usan el MISMO token y el MISMO chat_id (los de este sistema), pero cada uno tiene su propio nombre de equipo.</div>
+
+<h4>7. El manual para quien va a usar el celular (no vos)</h4>
+<p>Si la persona que va a usar el celular vigía no es técnica, generale un manual ya preparado con los datos de este sistema: abrí <code>manual.html</code> desde la app (botón "Manual para el usuario" arriba de todo), completá el token y el chat_id de ESTE sistema en el recuadro violeta de arriba (ese recuadro es solo para vos, quien lo prepara; la persona que lo va a usar no lo ve), y descargá la copia lista para mandarle. Hacé esto una vez por cada sistema, con los datos de ESE sistema.</p>
+
+<h3>Si manejás varios sistemas al mismo tiempo (como administrador)</h3>
+<ul>
+  <li>Como todos los bots los creás vos con tu cuenta de Telegram, todos van a aparecer juntos cuando hables de nuevo con @BotFather (escribile <code>/mybots</code> para ver la lista completa). Desde ahí podés entrar a cada uno para cambiarle el nombre, la foto, o para anular su token con <code>/revoke</code> si alguna vez se filtra o lo necesitás cambiar.</li>
+  <li>Sumate vos mismo a todos los grupos que vayas creando (o creálos vos directamente), así podés ver en tu celular las alertas de todos los sistemas a la vez, mientras que cada familia o cada usuario solo ve el grupo que le corresponde a él.</li>
+  <li>Si en algún momento alguien deja de necesitar el servicio, o se va alguien del lugar, simplemente sacalo de ese grupo de Telegram puntual: no afecta a los demás sistemas. Si por algún motivo necesitás "cortar" el acceso de un celular vigía entero (por ejemplo, se perdió o se lo robaron), cambiá el token de ESE sistema (con <code>/revoke</code> en BotFather te da uno nuevo) y volvé a poner el token nuevo en los celulares vigía buenos de ese mismo sistema; el celular perdido se queda con el token viejo, que ya no sirve para nada.</li>
+</ul>
+
+<h3 id="panel-admin">El panel de administrador en tu PC (<code>admin-sistemas.html</code>)</h3>
+<p>En la PC del administrador, dentro de la carpeta <code>C:\DETEC MOV</code>, está el archivo <b>admin-sistemas.html</b>. Es tu panel para manejar todos los sistemas. Se abre con doble clic y todo lo que cargues queda guardado <b>solo en el navegador de esa PC</b> (no está en internet, porque ahí se ven los tokens).</p>
+<p><b>Telegram no le avisa solo al panel</b> cuando creás un bot: el bot y el grupo se crean en Telegram, y el panel está en tu PC. Lo único que hacés vos es <b>pegar el token</b>; el panel completa el resto solo:</p>
+<ol>
+  <li>En Telegram: creá el bot con @BotFather (te da el token), creá el grupo, agregale el bot y mandá <code>/start@UsuarioDelBot</code> en el grupo.</li>
+  <li>En el panel: tocá <b>+ Nuevo sistema</b> y <b>pegá solo el token</b>.</li>
+  <li>Al pegarlo, el panel <b>solo</b>: verifica que el token funcione, completa el usuario del bot, pone el nombre del sistema (el del bot, lo podés cambiar), busca el grupo donde está el bot y completa el <b>chat_id</b> y el <b>nombre del grupo</b>. Si el grupo pasó a supergrupo, elige solo el número bueno (<code>-100…</code>). Si el bot está en varios grupos, te muestra la lista y tocás el de ese sistema.</li>
+  <li>Tocá <b>📨 Mandar prueba al grupo</b> para confirmar.</li>
+</ol>
+<p>Todo se guarda solo al instante: la próxima vez que abras el panel ya están todos tus sistemas, sin importar nada. Otros botones de cada sistema: <b>Ver</b> (muestra el token), <b>📖 Manual para este sistema</b> (abre el manual con los datos ya puestos para generar la copia que se manda), <b>📋 Copiar datos para un vigía</b>. <b>Exportar / Importar</b> sirven para hacer un respaldo o pasar los sistemas a otra PC u otro navegador (el archivo tiene los tokens: guardalo bien). Abrí el panel siempre con el mismo navegador.</p>
+
+<p>Para no perderte entre varios sistemas, usá esta tabla como anotador (podés imprimirla, pasarla a una hoja de cálculo, o simplemente copiarla a mano donde te sea más cómodo). <b>Importante: nunca anotes aquí el token</b>, ni en ningún lugar que otra persona pueda llegar a ver; el token solo tiene que estar guardado dentro de la app, en cada celular, y en tu cabeza (o en un lugar privado y seguro) mientras armás el sistema.</p>
+<table>
+  <thead><tr><th>Sistema (persona/lugar)</th><th>Usuario del bot (@...)</th><th>Nombre del grupo</th><th>Equipos vigía que tiene</th></tr></thead>
+  <tbody>
+    <tr><td>Ej.: Casa de Juana</td><td>@AvisosJuanaBot</td><td>Juana - avisos DETEC MOV</td><td>Equipo 1 · Dormitorio, Equipo 2 · Living</td></tr>
+    <tr><td></td><td></td><td></td><td></td></tr>
+    <tr><td></td><td></td><td></td><td></td></tr>
+    <tr><td></td><td></td><td></td><td></td></tr>
+  </tbody>
+</table>
+<table>
+  <thead><tr><th>Sistema</th><th>Bot (@BotFather)</th><th>Grupo</th><th>Vigías (equipos)</th></tr></thead>
+  <tbody>
+    <tr><td>Ej.: Casa de Juana</td><td>@juana_detecmov_bot</td><td>Juana — avisos</td><td>Equipo 1 · Dormitorio, Equipo 2 · Living</td></tr>
+    <tr><td></td><td></td><td></td><td></td></tr>
+    <tr><td></td><td></td><td></td><td></td></tr>
+  </tbody>
+</table>
+<div class="nota">No anotes el token en esta tabla ni en ningún lado que puedas compartir: solo nombre de sistema, bot, grupo y qué equipos vigía tiene.</div>
+
+<h2 id="celular-solo">Modo celular solo (recomendado, sin PC)</h2>
+<ol>
+  <li>En el celular que va a quedar frente a la persona, abrí en Chrome (Android) o <b>Safari</b> (iPhone): <a href="https://aleortizcorrea22-ops.github.io/detec-mov/">aleortizcorrea22-ops.github.io/detec-mov</a></li>
+  <li>Instalala: Android → menú (⋮) → "Instalar app". iPhone → botón Compartir → "Agregar a pantalla de inicio".</li>
+  <li>Abrila siempre desde el ícono que queda en la pantalla.</li>
+  <li>En <b>Telegram</b>, pegá el token del bot (@BotFather) y el chat_id del grupo, y tocá <b>Guardar</b>.</li>
+  <li>Tocá <b>Enviar alerta de prueba</b> y confirmá que llega al grupo.</li>
+  <li>Tocá <b>Iniciar</b>, dale permiso a la cámara, y apoyá el celular viendo a la persona de la cintura para arriba.</li>
+  <li>Dejalo enchufado al cargador, con la app abierta y la pantalla prendida (poné el tiempo de espera de pantalla al máximo en Ajustes del celular).</li>
+</ol>
+
+<h2 id="con-pc">Modo con PC / servidor</h2>
+<ol>
+  <li>En la carpeta <code>C:\DETEC MOV</code>, doble clic en <code>iniciar.bat</code> (abre <code>http://localhost:3000</code> y prende el servidor).</li>
+  <li>El token y chat_id de Telegram van en el archivo <code>.env</code> de esa carpeta.</li>
+  <li>Permite usar cámara de la PC, <b>Iriun Webcam</b> (celular viejo como webcam), cámara IP por HTTP (MJPEG/foto) o <b>cámara de seguridad RTSP</b> (necesita <code>ffmpeg</code> instalado).</li>
+  <li>Botón <b>Apagar sistema</b> en la app: cierra el servidor desde la propia página. También <code>detener.bat</code> en la carpeta.</li>
+  <li>Para verla desde el celular hace falta HTTPS: con <a href="https://github.com/cloudflare/cloudflared">cloudflared</a> (túnel rápido) o un certificado local.</li>
+</ol>
+
+<h2 id="camara">Elegir cámara (trasera / delantera)</h2>
+<p>En "Cámara → Dispositivo" el celular usa la <b>cámara trasera por defecto</b>. Se puede cambiar a la delantera o a cualquier otra cámara disponible en esa misma lista, incluso mientras está vigilando (cambia en el momento).</p>
+
+<h2 id="vivo">Ver la cámara en vivo desde otro celular</h2>
+<p>En modo celular solo, tildando <b>"Permitir ver esta cámara en vivo desde otro celular"</b> y tocando Iniciar, el celular manda un link al grupo de Telegram (<code>🔴 Ver esta cámara en vivo</code>). Quien abra ese link desde otro celular ve el video en vivo, conectado directo entre los dos aparatos (sin servidor propio, usando WebRTC).</p>
+<ul>
+  <li>El link ahora es <b>fijo</b>: no cambia cada vez que se reinicia la vigilancia.</li>
+  <li>Se reconecta solo si se corta un momento.</li>
+  <li>Funciona mejor por Wi-Fi; con algunas compañías de datos móviles la conexión directa puede no establecerse.</li>
+  <li>No muestra el esqueleto dibujado, solo la imagen cruda de la cámara.</li>
+</ul>
+
+<h2 id="ajustes">Tabla de ajustes</h2>
+<table>
+  <tr><th>Ajuste</th><th>Para qué sirve</th></tr>
+  <tr><td>Sensibilidad</td><td>Tamaño de la zona de la cabeza. Subir si no detecta, bajar si da falsas alarmas.</td></tr>
+  <tr><td>Tiempo mínimo de contacto</td><td>Cuánto tiempo debe estar la mano en la cabeza para avisar.</td></tr>
+  <tr><td>Espera entre alertas</td><td>Evita recibir muchos mensajes seguidos por el mismo toque.</td></tr>
+  <tr><td>Modelo de pose</td><td>Liviano para celulares lentos, Pesado si la persona está lejos.</td></tr>
+  <tr><td>Detectar los dedos</td><td>Más preciso de cerca, usa más batería/procesador.</td></tr>
+  <tr><td>Contar también tocarse la cara</td><td>Si se activa, también avisa por ojos/nariz/mejillas/boca/mentón.</td></tr>
+</table>
+
+<h2 id="problemas">Problemas comunes</h2>
+<h3>"Unauthorized" al buscar chat_id o mandar alerta</h3>
+<p>El token del bot está mal pegado en el celular. Borrá el casillero, volvé a copiar el token completo (46 caracteres, sin espacios, sin "TELEGRAM_BOT_TOKEN="), pegalo y tocá Guardar.</p>
+<h3>"chat not found" / "group chat was upgraded"</h3>
+<p>El chat_id está mal o cambió (los grupos pueden migrar a "supergrupo" y cambiar de id). Volvé a buscarlo con "Buscar mi chat_id" después de escribirle algo al bot/grupo.</p>
+<h3>"peer-unavailable" al abrir el link de ver en vivo</h3>
+<p>El celular que vigila no está conectado en ese momento: hay que tenerlo con la app abierta y vigilando. El visor reintenta solo durante unos segundos.</p>
+<h3>Llegan alertas duplicadas</h3>
+<p>Seguramente la PC y el celular están vigilando los dos a la vez. Apagá uno de los dos.</p>
+
+<h2 id="limites">Límites a tener en cuenta (MVP)</h2>
+<ul>
+  <li>Analiza una persona por cámara.</li>
+  <li>La app tiene que quedar abierta y en primer plano, con la pantalla prendida.</li>
+  <li>De espaldas, o con la cabeza tapada, detecta peor.</li>
+  <li>Todavía no distingue "rascar" (repetido) de "tocar": avisa ante cualquier contacto sostenido.</li>
+  <li>Video en vivo entre celulares puede no conectar en algunas redes de datos móviles (mejor Wi-Fi).</li>
+</ul>
+
+<h2 id="links">Links importantes</h2>
+<ul>
+  <li>App publicada (celular solo): <a href="https://aleortizcorrea22-ops.github.io/detec-mov/">aleortizcorrea22-ops.github.io/detec-mov</a></li>
+  <li>Repositorio: <a href="https://github.com/aleortizcorrea22-ops/detec-mov">github.com/aleortizcorrea22-ops/detec-mov</a> (rama <code>mvp-deteccion-cabeza</code>, PR #1)</li>
+  <li>Carpeta en la PC: <code>C:\DETEC MOV</code> (<code>iniciar.bat</code> para arrancar, <code>detener.bat</code> para parar, <code>.env</code> con el token de Telegram)</li>
+</ul>
+
+<h2 id="notas">Mis datos (privado, solo en este navegador)</h2>
+<div class="nota">
+Lo que escribas acá abajo se guarda solo en la memoria de <b>este navegador, en esta PC</b> (localStorage). No se manda a ningún servidor ni se comparte con nadie, ni siquiera con el asistente. Es para tenerlo a mano sin tener que buscarlo en el <code>.env</code> cada vez. Si abrís este archivo en otra PC o navegador, lo vas a tener que escribir de nuevo ahí.
+</div>
+<p>
+  <label for="miToken"><b>Token del bot de Telegram</b></label><br>
+  <input id="miToken" type="password" autocomplete="off" placeholder="123456789:AA..." style="width:100%;max-width:420px;padding:8px;font:inherit;margin-top:4px;">
+  <button id="verToken" type="button" style="padding:8px 12px;margin-left:6px;cursor:pointer;">Mostrar</button>
+</p>
+<p>
+  <label for="miChat"><b>Chat ID del grupo</b></label><br>
+  <input id="miChat" type="text" autocomplete="off" placeholder="-1004313817541" style="width:100%;max-width:420px;padding:8px;font:inherit;margin-top:4px;">
+</p>
+<p>
+  <button id="guardarNotas" type="button" style="padding:9px 16px;background:#0f766e;color:#fff;border:0;border-radius:6px;cursor:pointer;font:inherit;">Guardar</button>
+  <span id="notasOk" class="ok" style="display:none;margin-left:10px;">Guardado ✓</span>
+</p>
+
+<script>
+(function () {
+  var KEY = 'detecmov.guia.notas';
+  var token = document.getElementById('miToken');
+  var chat = document.getElementById('miChat');
+  var verBtn = document.getElementById('verToken');
+  var okMsg = document.getElementById('notasOk');
+  try {
+    var saved = JSON.parse(localStorage.getItem(KEY) || '{}');
+    token.value = saved.token || '';
+    chat.value = saved.chat || '';
+  } catch (e) { /* sin datos guardados todavía */ }
+
+  verBtn.addEventListener('click', function () {
+    var show = token.type === 'password';
+    token.type = show ? 'text' : 'password';
+    verBtn.textContent = show ? 'Ocultar' : 'Mostrar';
+  });
+
+  document.getElementById('guardarNotas').addEventListener('click', function () {
+    try {
+      localStorage.setItem(KEY, JSON.stringify({ token: token.value.trim(), chat: chat.value.trim() }));
+      okMsg.style.display = '';
+      setTimeout(function () { okMsg.style.display = 'none'; }, 2500);
+    } catch (e) {
+      alert('No se pudo guardar en este navegador.');
+    }
+  });
+})();
+</script>
+
+<footer>Generado automáticamente a partir de los cambios hechos en el proyecto.</footer>
+</body>
+</html>
