@@ -5,7 +5,7 @@ import { setupInstallButton } from './install.js';
 // Visible en pantalla (junto al nombre) para confirmar de un vistazo si el celular/PC ya
 // tiene la versión más nueva, sin tener que abrir herramientas de desarrollador. Se sube
 // junto con el VERSION de sw.js en cada cambio.
-const APP_VERSION = 'v67';
+const APP_VERSION = 'v68';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo, loadLicenciaConfig } from './licencia.js';
 import { iniciarPanelAdmin, NOMBRE_ADMIN_SECRETO } from './admin-panel.js';
@@ -717,7 +717,31 @@ function processFrame({ source, w, h }) {
   // Evalúa a cada persona por separado.
   const list = people.update(poses, w, h, now).map((p) => {
     const pose = poses[p.index];
-    const res = evaluateFrame(pose, handsByPose[p.index], w, h, { sensitivity: settings.sensitivity, includeFace: settings.includeFace });
+    // --- Confirmaciones de "esto es una persona de verdad", compartidas por TODAS las
+    // alertas de esta persona (toque de cabeza, caída, actividades): el verificador de
+    // persona (COCO) y la evidencia real de cuerpo (cara o pierna, no solo hombros/cadera
+    // que una mano sola puede "completar"). ---
+    if (objectDetector && !objectDetectorFailed && cachedPersonBoxes
+      && poseConfirmadaComoPersona(pose, cachedPersonBoxes, w, h)) {
+      p.track.lastConfirmedPerson = now;
+    }
+    const verificadorUtilizable = objectDetector && !objectDetectorFailed
+      && !(objSinPersonaDesde && now - objSinPersonaDesde > FALL_VERIFIER_GIVEUP_MS);
+    // Si no hay verificador (falló al cargar en este equipo) o lleva mucho tiempo sin
+    // confirmar a NADIE en el cuadro, no se exige esto (mejor eso que ocultar a alguien).
+    const personaVerificada = !verificadorUtilizable
+      || (now - (p.track.lastConfirmedPerson || 0)) <= FALL_CONFIRM_WINDOW_MS;
+    if (evidenciaDeCuerpoReal(pose)) p.track.lastBodyEvidenceAt = now;
+    const cuerpoRealConfirmado = (now - (p.track.lastBodyEvidenceAt || 0)) <= FALL_CONFIRM_WINDOW_MS;
+
+    // Toque de cabeza: además de la forma de la cabeza/cara (ya la valida evaluateFrame),
+    // tiene que tratarse de una persona confirmada por el verificador y con evidencia real
+    // de cuerpo (no una mano sola haciéndose pasar por alguien tocándose la cabeza).
+    const resCrudo = evaluateFrame(pose, handsByPose[p.index], w, h, { sensitivity: settings.sensitivity, includeFace: settings.includeFace });
+    // `res.touching` es lo que se usa en todos lados (overlay, estado, alerta): ya
+    // incluye el gate de persona confirmada + cuerpo real, para no mostrar "CABEZA" en
+    // pantalla por algo que de todas formas no iba a avisar.
+    const res = { ...resCrudo, touching: resCrudo.touching && personaVerificada && cuerpoRealConfirmado };
     const touchState = p.track.touch.update(res.touching, now);
     const watchAny = settings.watchZoneEnter || settings.watchZoneExit || settings.watchZoneInside || settings.watchZoneOutside;
     const act = p.track.act.update(pose, w, h, now, {
@@ -728,26 +752,9 @@ function processFrame({ source, w, h }) {
       watchInsideMs: settings.watchZoneInside ? settings.watchDwellInS * UNIT_MS[settings.watchDwellInUnit] : null,
       watchOutsideMs: settings.watchZoneOutside ? settings.watchDwellOutS * UNIT_MS[settings.watchDwellOutUnit] : null,
     });
-    // ¿El verificador de persona (COCO) confirmó a ESTE seguimiento como persona de
-    // verdad hace poco? Si no hay verificador (falló al cargar en este equipo) o lleva
-    // mucho tiempo sin confirmar a NADIE en el cuadro, no se exige esto (ver arriba).
-    if (objectDetector && !objectDetectorFailed && cachedPersonBoxes
-      && poseConfirmadaComoPersona(pose, cachedPersonBoxes, w, h)) {
-      p.track.lastConfirmedPerson = now;
-    }
-    const verificadorUtilizable = objectDetector && !objectDetectorFailed
-      && !(objSinPersonaDesde && now - objSinPersonaDesde > FALL_VERIFIER_GIVEUP_MS);
-    const personaVerificadaParaCaida = !verificadorUtilizable
-      || (now - (p.track.lastConfirmedPerson || 0)) <= FALL_CONFIRM_WINDOW_MS;
     // ¿Hubo un pico de velocidad alto hace poco (brusco, como una caída real) o todo fue
     // lento y controlado (como alguien que se acuesta a propósito)?
     const transicionBrusca = act.peakSpeedRecent >= FALL_SPEED_MIN;
-    // ¿Se vio alguna vez hace poco una CARA creíble (ojos/nariz/orejas de verdad) o una
-    // pierna con confianza alta? Una mano sola cerca de cámara puede "completar" hombros
-    // y cadera creíbles para el modelo, pero no una cara ni una rodilla de verdad: esto
-    // la filtra aunque pase el resto de los controles.
-    if (evidenciaDeCuerpoReal(pose)) p.track.lastBodyEvidenceAt = now;
-    const cuerpoRealParaCaida = (now - (p.track.lastBodyEvidenceAt || 0)) <= FALL_CONFIRM_WINDOW_MS;
 
     // Acostada en una zona marcada como cama no es una caída. Tampoco cuenta si esta
     // persona nunca estuvo parada o sentada antes, o si pasó a acostada de forma lenta y
@@ -759,8 +766,15 @@ function processFrame({ source, w, h }) {
     const lying = settings.detectFalls && act.lyingNow && !act.inBed && act.huboPosturaNormalAntes
       && personaVerificadaParaCaida && transicionBrusca && cuerpoRealParaCaida;
     const fallState = settings.detectFalls ? p.track.fall.update(lying, now) : 'idle';
+    // Todas las alertas de ESTA persona (toque, caída, y cada actividad: se sentó, se
+    // levantó, caminó, zona, pidió ayuda) exigen lo mismo: primero confirmar que es una
+    // persona de verdad (verificador + evidencia de cuerpo), y recién ahí avisar lo que
+    // hizo. Sin esa confirmación reciente, no se informa ningún evento de actividad
+    // (aunque la postura cruda haya cambiado), para no avisar de un objeto cualquiera.
+    const personaConfirmada = personaVerificada && cuerpoRealConfirmado;
+    const eventosConfirmados = personaConfirmada ? act.events : [];
     return { id: p.id, track: p.track, pose, hands: handsByPose[p.index], res, touchState, lying, fallState, box: poseBox(pose, w, h),
-      posture: act.posture, walking: act.walking, inBed: act.lyingNow && act.inBed, events: act.events,
+      personaConfirmada, posture: act.posture, walking: act.walking, inBed: act.lyingNow && act.inBed, events: eventosConfirmados,
       zoneEnterCount: act.zoneEnterCount, zoneExitCount: act.zoneExitCount, zoneLastSide: act.zoneLastSide, zoneElapsedS: Math.round(act.zoneElapsedMs / 1000) };
   });
 
