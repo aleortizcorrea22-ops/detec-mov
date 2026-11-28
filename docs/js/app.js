@@ -5,9 +5,10 @@ import { setupInstallButton } from './install.js';
 // Visible en pantalla (junto al nombre) para confirmar de un vistazo si el celular/PC ya
 // tiene la versión más nueva, sin tener que abrir herramientas de desarrollador. Se sube
 // junto con el VERSION de sw.js en cada cambio.
-const APP_VERSION = 'v92';
+const APP_VERSION = 'v93';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo, loadLicenciaConfig } from './licencia.js';
+import { aplicarConfigRemota } from './config-remota.js';
 import { iniciarPanelAdmin, NOMBRE_ADMIN_SECRETO } from './admin-panel.js';
 
 // Servidores para que el video en vivo cruce redes difíciles (NAT estricto, datos
@@ -1743,6 +1744,29 @@ listDevices().catch(() => {});
 setupInstallButton($('installBtn'), $('iosDialog'));
 iniciarChequeoLicencia();
 iniciarPanelAdmin();
+
+// Tildes manejados también desde la administración (servidor de licencias): cada minuto se pregunta
+// qué tildes le tocan a este vigía (por su nombre de equipo) y se aplican SOLO si la revisión es más
+// nueva que la última aplicada. Lo que se cambia a mano en este celular queda hasta la próxima revisión.
+async function revisarConfigRemota() {
+  try {
+    const { baseUrl, id } = loadLicenciaConfig();
+    if (!id) return;
+    const r = await fetch(`${baseUrl}/api/config/${encodeURIComponent(id)}?n=${encodeURIComponent(deviceName())}`, { cache: 'no-store' });
+    if (!r.ok) return;
+    const res = aplicarConfigRemota(settings, await r.json());
+    if (!res.aplicada) return;
+    saveSettings();
+    if (res.cambiados.length) {
+      bindSettings();
+      aplicarUmbralesPose();
+      refreshBedInfo();
+      addLog(`Tildes cambiados desde la administración: ${res.cambiados.join(', ')}`);
+    }
+  } catch { /* sin red o servidor sin esta función: se reintenta en un minuto */ }
+}
+setTimeout(revisarConfigRemota, 5000);
+setInterval(revisarConfigRemota, 60 * 1000);
 
 // ---------------------------------------------------------------------------
 // Compartir la aplicación (para instalarla en el celular de una familia nueva)
