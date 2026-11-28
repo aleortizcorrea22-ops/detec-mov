@@ -1,11 +1,11 @@
 import { evaluateFrame, P, manoAbajo } from './rules.js';
-import { PeopleTracker, assignHands, poseBox, filtrarPosesDuplicadas, zonePoints, evidenciaDeCuerpoReal, brazoLevantado, manoNoPersona } from './people.js';
+import { PeopleTracker, assignHands, poseBox, filtrarPosesDuplicadas, zonePoints, evidenciaDeCuerpoReal, brazoLevantado, manoNoPersona, eventosPendientes } from './people.js';
 import { setupInstallButton } from './install.js';
 
 // Visible en pantalla (junto al nombre) para confirmar de un vistazo si el celular/PC ya
 // tiene la versión más nueva, sin tener que abrir herramientas de desarrollador. Se sube
 // junto con el VERSION de sw.js en cada cambio.
-const APP_VERSION = 'v87';
+const APP_VERSION = 'v89';
 import { loadDirectConfig, saveDirectConfig, sendDirectAlert, findDirectChats } from './telegram-direct.js';
 import { iniciarChequeoLicencia, accesoActual, mensajeBloqueo, reportarPresenciaEnVivo, loadLicenciaConfig } from './licencia.js';
 import { iniciarPanelAdmin, NOMBRE_ADMIN_SECRETO } from './admin-panel.js';
@@ -301,8 +301,10 @@ async function loadModels() {
     });
   }
   if (!handLandmarker) {
-    handLandmarker = await createWithFallback(mp.HandLandmarker, {
-      baseOptions: { modelAssetPath: modelUrl('hand') },
+    // CPU a propósito (igual que el verificador de persona): todas las pruebas buenas se hicieron
+    // en CPU, y la regla "una mano no es una persona" depende de que este modelo vea la palma.
+    handLandmarker = await mp.HandLandmarker.createFromOptions(vision, {
+      baseOptions: { modelAssetPath: modelUrl('hand'), delegate: 'CPU' },
       runningMode: 'VIDEO',
       numHands: Math.min(6, 2 * Math.max(1, Number(settings.maxPeople) || 1)),
       minHandDetectionConfidence: 0.4,
@@ -659,11 +661,11 @@ const PERSON_STABLE_MS = 400;
 // (ampliado) alrededor de cada esqueleto: así reconoce bien a una persona chica o lejana, y
 // un esqueleto inventado sobre cables/escritorio/monitor da puntajes bajísimos. Medido sobre
 // fotos reales (modelo en CPU): persona real 0.74-0.91; 11 fantasmas 0.00-0.20; un antebrazo
-// suelto 0.43. Se confirma desde 0.5 (2 veces seguidas) y para AVISAR algo se exige 0.6.
+// suelto 0.43. Se confirma desde 0.5 (2 veces seguidas); para AVISAR alcanza con estar confirmado.
 // La anatomía (proporción cara/hombros, visibilidad) NO sirve para separar: los fantasmas la
 // tienen perfecta — se midió.
 const COCO_SCORE_MIN = 0.5;
-const COCO_SCORE_ALERTA = 0.6;
+const COCO_SCORE_ALERTA = 0.5;
 const COCO_CHECK_FAST_MS = 250; // seguimiento todavía sin confirmar
 const COCO_CHECK_SLOW_MS = 1000; // seguimiento ya confirmado
 const COCO_CROP_MAX = 400; // lado máximo del recorte: el modelo lo achica a 320 igual
@@ -673,6 +675,7 @@ const cropCtx = cropCanvas.getContext('2d');
 // ese seguimiento un rato, para que no parpadee entre mano y persona.
 const MANO_BLOQUEO_MS = 1500;
 let manoRechazadaAt = 0;
+let manosVistas = 0; // cuántas manos ve el detector en el último cuadro (diagnóstico en la barra)
 let cocoUltimoPuntaje = 0; // se muestra en la barra de estado para poder diagnosticar en el celular
 
 /** Mejor puntaje de "persona" que COCO le da al recorte alrededor de este esqueleto. */
@@ -712,9 +715,13 @@ function processFrame({ source, w, h }) {
   // detectar a una persona real. La protección de verdad (con 6 s de memoria) sigue más
   // abajo, por seguimiento: `cuerpoRealConfirmado`.)
 
-  const handRes = settings.useHands && poses.length ? handLandmarker.detectForVideo(source, ts) : null;
+  // El detector de manos corre SIEMPRE (no solo con "Detectar también los dedos"): la regla
+  // "una mano no es una persona" lo necesita. La casilla solo decide si las manos cuentan para
+  // el toque de cabeza y el brazo.
+  const handRes = poses.length ? handLandmarker.detectForVideo(source, ts) : null;
   const hands = handRes?.landmarks || [];
-  const handsByPose = assignHands(poses, hands, w, h);
+  manosVistas = hands.length;
+  const handsByPose = settings.useHands ? assignHands(poses, hands, w, h) : poses.map(() => []);
   const now = Date.now();
 
   // Diagnóstico: si no se ve a nadie, avisar si es porque el modelo de pose no ve ningún
@@ -860,7 +867,7 @@ function processFrame({ source, w, h }) {
     // pantalla o avisar nada — una persona real se mantiene mucho más que eso.
     if (personaConfirmadaAhora) { if (!p.track.estableDesde) p.track.estableDesde = now; } else { p.track.estableDesde = null; }
     const personaConfirmada = personaVerificada && p.track.estableDesde !== null && (now - p.track.estableDesde) >= PERSON_STABLE_MS;
-    const eventosConfirmados = personaConfirmada && personaFuerte ? act.events.filter((e) => e !== 'pide_ayuda' || !res.touching) : [];
+    const eventosConfirmados = eventosPendientes(p.track.pendingEv ??= {}, act.events, now, personaConfirmada && personaFuerte, (e) => e === 'pide_ayuda' && res.touching);
     return { id: p.id, track: p.track, pose, hands: handsByPose[p.index], res, touchState, lying, fallState, box: poseBox(pose, w, h),
       personaConfirmada, brazoArriba: act.brazoAhora, posture: act.posture, walking: act.walking, inBed: act.lyingNow && act.inBed, events: eventosConfirmados,
       zoneEnterCount: act.zoneEnterCount, zoneExitCount: act.zoneExitCount, zoneLastSide: act.zoneLastSide, zoneElapsedS: Math.round(act.zoneElapsedMs / 1000) };
@@ -878,13 +885,13 @@ function processFrame({ source, w, h }) {
   const fallen = list.filter((p) => p.lying);
   const touching = list.filter((p) => p.res.touching);
   if (!list.length) {
-    if (now - lastNoPerson > 1000) { setStatus('warn', `Buscando personas… · COCO ${cocoUltimoPuntaje.toFixed(2)}${now - manoRechazadaAt < 2000 ? ' · mano (no es persona)' : ''}`); lastNoPerson = now; }
+    if (now - lastNoPerson > 1000) { setStatus('warn', `Buscando personas… · COCO ${cocoUltimoPuntaje.toFixed(2)} · manos ${manosVistas}${now - manoRechazadaAt < 2000 ? ' · mano (no es persona)' : ''}`); lastNoPerson = now; }
   } else if (fallen.length) {
     setStatus('alert', `${fallen.map((p) => `Persona ${p.id}`).join(', ')} en el suelo · ${cuantas}`);
   } else if (touching.length) {
     setStatus('alert', `${touching.map((p) => `Persona ${p.id}`).join(', ')}: mano en la cabeza · ${cuantas}`);
   } else {
-    setStatus('ok', `Vigilando · ${cuantas} · COCO ${cocoUltimoPuntaje.toFixed(2)}${settings.alertPideAyuda ? ` · brazo ${list.some((p) => p.brazoArriba) ? 'ARRIBA' : 'abajo'}` : ''}`);
+    setStatus('ok', `Vigilando · ${cuantas} · COCO ${cocoUltimoPuntaje.toFixed(2)} · manos ${manosVistas}${settings.alertPideAyuda ? ` · brazo ${list.some((p) => p.brazoArriba) ? 'ARRIBA' : 'abajo'}` : ''}`);
   }
 
   frames++;

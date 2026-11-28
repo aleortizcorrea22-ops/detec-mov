@@ -351,6 +351,27 @@ export function ladoDeZona(pt, zone) {
 }
 
 /**
+ * Los eventos de actividad (pidió ayuda, se sentó, caminó, zona...) se generan en UN solo
+ * cuadro. Si justo en ese cuadro la persona todavía no estaba confirmada, o el verificador
+ * (COCO) dudó un instante, el aviso se perdía para siempre. Acá se guardan hasta `ventanaMs`
+ * y salen apenas se puede avisar.
+ * @param {Object} pend memoria por persona (se modifica): { evento: instante }
+ * @param {string[]} nuevos eventos de este cuadro
+ * @param {boolean} puedeAvisar si ahora la persona está confirmada
+ * @param {(e:string)=>boolean} excluido eventos que ahora no deben salir (se mantienen pendientes)
+ * @returns {string[]} eventos que salen ahora
+ */
+export function eventosPendientes(pend, nuevos, ahora, puedeAvisar, excluido = () => false, ventanaMs = 4000) {
+  for (const e of nuevos) pend[e] = ahora;
+  const listos = [];
+  for (const [e, t] of Object.entries(pend)) {
+    if (ahora - t > ventanaMs) delete pend[e];
+    else if (puedeAvisar && !excluido(e)) { listos.push(e); delete pend[e]; }
+  }
+  return listos;
+}
+
+/**
  * ¿Lo que el modelo de pose tomó por una persona es en realidad una MANO? Típico: la palma
  * mostrada a la cámara, de cerca: el modelo de pose "inventa" un cuerpo sobre ella y hasta el
  * detector de personas (COCO) puede darle puntaje. Si una mano detectada tiene su centro
